@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="HazCast is a weather dashboard built with html, css and javascript.">
+  <title>HazCast | Weather Dashboard</title>
+
+  <!-- set the saved theme early so the page does not flash light before turning dark -->
+  <script>
+    try {
+      const savedTheme = localStorage.getItem("hazcast-theme") || localStorage.getItem("skycast-theme");
+      const useDark = savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.setAttribute("data-theme", useDark ? "dark" : "light");
+    } catch (error) {
+      // storage is blocked, keep the default theme
+    }
+  </script>
+
+  <!-- favicon -->
+  <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+
+  <!-- google fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- font awesome icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- main styles -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- header -->
+  <header class="header">
+    <div class="header-inner">
+      <a class="logo" href="index.html" aria-label="HazCast home">
+        <i class="fa-solid fa-cloud-sun" aria-hidden="true"></i>
+        <span>HazCast</span>
+      </a>
+
+      <!-- search -->
+      <form id="search-form" class="search-form" role="search" autocomplete="off">
+        <label for="search-input" class="visually-hidden">Search for a city</label>
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass search-icon" aria-hidden="true"></i>
+          <input id="search-input" type="search" placeholder="Search for a city..." maxlength="60" aria-controls="suggestions" aria-expanded="false">
+          <ul id="suggestions" class="suggestions" aria-label="city suggestions" hidden></ul>
+        </div>
+        <button id="search-btn" class="btn btn-primary" type="submit">Search</button>
+      </form>
+
+      <!-- header buttons -->
+      <div class="header-actions">
+        <button id="location-btn" class="btn btn-secondary" type="button" aria-label="use my location">
+          <i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i>
+          <span class="btn-text">Use my location</span>
+        </button>
+
+        <div class="unit-toggle" role="group" aria-label="temperature unit">
+          <button id="unit-c" class="unit-btn active" type="button" aria-pressed="true">°C</button>
+          <button id="unit-f" class="unit-btn" type="button" aria-pressed="false">°F</button>
+        </div>
+
+        <button id="theme-btn" class="icon-btn" type="button" aria-label="switch to dark mode">
+          <i class="fa-solid fa-moon" aria-hidden="true"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- main content -->
+  <main id="main" class="layout">
+    <h1 class="visually-hidden">HazCast weather dashboard</h1>
+
+    <div class="main-column">
+      <!-- messages and loading -->
+      <p id="message" class="message" role="alert" hidden></p>
+
+      <div id="loading" class="loading" role="status" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Loading weather...</p>
+      </div>
+
+      <div id="weather-content" class="weather-content" hidden>
+        <div class="top-row">
+          <!-- current weather -->
+          <section id="current-card" class="current-card bg-clear" aria-label="current weather">
+            <div class="current-top">
+              <div>
+                <h2 id="city-name" class="city-title">City</h2>
+                <p id="current-date" class="current-meta"></p>
+                <p id="current-time" class="current-meta"></p>
+              </div>
+              <button id="favorite-btn" class="favorite-btn" type="button" aria-pressed="false"></button>
+            </div>
+
+            <div class="current-main">
+              <i id="current-icon" class="fa-solid fa-sun current-icon" aria-hidden="true"></i>
+              <div>
+                <p id="current-temp" class="current-temp">--</p>
+                <p id="current-condition" class="current-condition">--</p>
+              </div>
+            </div>
+
+            <div class="current-extra">
+              <span id="feels-like" class="pill"></span>
+              <span id="high-low" class="pill"></span>
+            </div>
+          </section>
+
+          <!-- weather details -->
+          <section class="panel details-panel" aria-labelledby="details-title">
+            <h2 id="details-title" class="panel-title">
+              <i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Weather details
+            </h2>
+            <div id="details-grid" class="details-grid"></div>
+          </section>
+        </div>
+
+        <!-- hourly forecast -->
+        <section class="panel" aria-labelledby="hourly-title">
+          <h2 id="hourly-title" class="panel-title">
+            <i class="fa-regular fa-clock" aria-hidden="true"></i> Hourly forecast
+          </h2>
+          <div id="hourly-list" class="hourly-list" tabindex="0" aria-label="hourly forecast, scroll sideways to see more"></div>
+        </section>
+
+        <!-- 7-day forecast -->
+        <section class="panel" aria-labelledby="daily-title">
+          <h2 id="daily-title" class="panel-title">
+            <i class="fa-regular fa-calendar" aria-hidden="true"></i> 7-day forecast
+          </h2>
+          <ul id="daily-list" class="daily-list"></ul>
+        </section>
+      </div>
+    </div>
+
+    <!-- sidebar -->
+    <aside class="sidebar">
+      <section class="panel" aria-labelledby="favorites-title">
+        <h2 id="favorites-title" class="panel-title">
+          <i class="fa-solid fa-heart" aria-hidden="true"></i> Favorite cities
+        </h2>
+        <ul id="favorites-list" class="city-list"></ul>
+      </section>
+
+      <section class="panel" aria-labelledby="recent-title">
+        <h2 id="recent-title" class="panel-title">
+          <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recent searches
+        </h2>
+        <ul id="recent-list" class="city-list"></ul>
+      </section>
+    </aside>
+  </main>
+
+  <!-- footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <p><strong>HazCast</strong> · built with HTML, CSS &amp; JavaScript</p>
+      <p>Weather data provided by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></p>
+      <p>
+        Developer: Hazim Aqil ·
+        <a href="https://github.com/hazell-lab/" target="_blank" rel="noopener">GitHub</a> ·
+        <a href="https://hazimaqil-portfolio.netlify.app" target="_blank" rel="noopener">Portfolio</a>
+      </p>
+    </div>
+  </footer>
+
+  <script src="js/script.js"></script>
+</body>
+</html>
