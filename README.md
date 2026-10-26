@@ -2,10 +2,9 @@
 
 A modern, responsive weather dashboard built with **HTML, CSS and vanilla JavaScript**. HazCast fetches real weather data from the Open-Meteo API, so no API key is needed.
 
-> Built by Hazim Aqil · [Portfolio](https://hazimaqil-portfolio.netlify.app) · [GitHub](https://github.com/hazell-lab/)
+**[🔗 Live Demo](https://hazcast-weatherdashboard.netlify.app/)** · [Source code](https://github.com/hazell-lab/Haz-Cast) · [Portfolio](https://hazimaqil-portfolio.netlify.app)
 
-<!-- add a screenshot: save it as assets/images/screenshot.png, then remove the comment marks below -->
-<!-- ![HazCast screenshot](assets/images/screenshot.png) -->
+![HazCast weather dashboard](docs/screenshot.png)
 
 ## Description
 
@@ -58,23 +57,27 @@ HazCast lets you search for any city in the world and see its current weather, t
 ## Folder Structure
 
 ```
-weather-dashboard/
+Haz-Cast/
 ├── index.html
 ├── css/
 │   └── style.css
 ├── js/
 │   └── script.js
 ├── assets/
-│   ├── images/          (screenshot goes here)
 │   └── icons/
 │       └── favicon.svg
+├── docs/
+│   └── screenshot.png
 └── README.md
 ```
 
 ## Setup
 
-1. Download or clone this project.
-2. Open the `weather-dashboard` folder in VS Code.
+1. Clone this repository (or download it as a ZIP):
+   ```bash
+   git clone https://github.com/hazell-lab/Haz-Cast.git
+   ```
+2. Open the `Haz-Cast` folder in VS Code.
 3. Install the **Live Server** extension if you do not have it.
 4. Right-click `index.html` and choose **Open with Live Server**.
 5. The app opens in your browser at an address like `http://127.0.0.1:5500`.
@@ -99,3 +102,11 @@ No API key is required.
 - Multiple saved locations with drag-to-reorder
 - Backend with user accounts
 - React version of the app
+
+## Author
+
+Built by **Hazim Aqil**, Software Engineering student at the German-Malaysian Institute (GMI).
+
+- Portfolio: [hazimaqil-portfolio.netlify.app](https://hazimaqil-portfolio.netlify.app)
+- GitHub: [@hazell-lab](https://github.com/hazell-lab)
+- LinkedIn: [mdhazimaqil](https://www.linkedin.com/in/mdhazimaqil/)
