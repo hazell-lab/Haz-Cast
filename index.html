@@ -47,7 +47,7 @@
         <label for="search-input" class="visually-hidden">Search for a city</label>
         <div class="search-box">
           <i class="fa-solid fa-magnifying-glass search-icon" aria-hidden="true"></i>
-          <input id="search-input" type="search" placeholder="Search for a city..." maxlength="60" aria-controls="suggestions" aria-expanded="false">
+          <input id="search-input" type="search" role="combobox" aria-autocomplete="list" placeholder="Search for a city..." maxlength="60" aria-controls="suggestions" aria-expanded="false" autocomplete="off">
           <ul id="suggestions" class="suggestions" aria-label="city suggestions" hidden></ul>
         </div>
         <button id="search-btn" class="btn btn-primary" type="submit">Search</button>
