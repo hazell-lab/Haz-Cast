@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="HazCast is a weather dashboard built with html, css and javascript.">
+  <meta name="description" content="HazCast is a weather dashboard with live forecasts, hourly and 7-day charts and air quality, powered by Open-Meteo.">
+  <meta name="theme-color" content="#33444d">
   <title>HazCast | Weather Dashboard</title>
 
   <!-- set the saved theme early so the page does not flash light before turning dark -->
@@ -20,13 +21,11 @@
   <!-- favicon -->
   <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
 
-  <!-- google fonts -->
+  <!-- google fonts: archivo with its width axis -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-
-  <!-- font awesome icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
 
   <!-- main styles -->
   <link rel="stylesheet" href="css/style.css">
@@ -34,134 +33,319 @@
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <!-- header -->
-  <header class="header">
-    <div class="header-inner">
-      <a class="logo" href="index.html" aria-label="HazCast home">
-        <i class="fa-solid fa-cloud-sun" aria-hidden="true"></i>
-        <span>HazCast</span>
+  <!-- hazcast glyphs: weather icons and interface icons -->
+  <svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+    <defs>
+      <!-- cloud outlines reused by the weather glyphs -->
+      <path id="cloud-low" d="M7 18.5H17A4 4 0 0 0 17.6 10.55A5.5 5.5 0 0 0 7.1 9.6A4.5 4.5 0 0 0 7 18.5Z"/>
+      <path id="cloud-high" d="M7 15H17A4 4 0 0 0 17.6 7.05A5.5 5.5 0 0 0 7.1 6.1A4.5 4.5 0 0 0 7 15Z"/>
+      <path id="cloud-small" d="M9 19H18A3.4 3.4 0 0 0 18.5 12.25A4.7 4.7 0 0 0 9.6 11.4A3.8 3.8 0 0 0 9 19Z"/>
+      <mask id="cut-small" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+        <rect width="24" height="24" fill="#fff"/>
+        <use href="#cloud-small" fill="#000" stroke="#000" stroke-width="3.2"/>
+      </mask>
+      <mask id="cut-high" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+        <rect width="24" height="24" fill="#fff"/>
+        <use href="#cloud-high" fill="#000" stroke="#000" stroke-width="3.2"/>
+      </mask>
+    </defs>
+
+    <symbol id="g-sun" viewBox="0 0 24 24">
+      <g fill="none" stroke="var(--g-sun, currentColor)" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="12" cy="12" r="4.2" fill="var(--g-sun-fill, none)"/>
+        <path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5l1.5 1.5M17 17l1.5 1.5M5.5 18.5L7 17M17 7l1.5-1.5"/>
+      </g>
+    </symbol>
+
+    <symbol id="g-moon" viewBox="0 0 24 24">
+      <path d="M19.4 14.7A7.6 7.6 0 1 1 9.3 4.6a6.1 6.1 0 0 0 10.1 10.1Z" fill="var(--g-moon-fill, none)" stroke="var(--g-moon, currentColor)" stroke-width="1.6" stroke-linejoin="round"/>
+    </symbol>
+
+    <symbol id="g-cloud-sun" viewBox="0 0 24 24">
+      <g mask="url(#cut-small)" fill="none" stroke="var(--g-sun, currentColor)" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="9" cy="9" r="3.4" fill="var(--g-sun-fill, none)"/>
+        <path d="M9 2.4v1.6M2.4 9h1.6M4.3 4.3l1.1 1.1M13.7 4.3l-1.1 1.1M4.3 13.7l1.1-1.1"/>
+      </g>
+      <use href="#cloud-small" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    </symbol>
+
+    <symbol id="g-cloud-moon" viewBox="0 0 24 24">
+      <path mask="url(#cut-small)" d="M14.2 10.2A5.6 5.6 0 1 1 6.8 3.2a4.4 4.4 0 0 0 7.4 7Z" fill="var(--g-moon-fill, none)" stroke="var(--g-moon, currentColor)" stroke-width="1.6" stroke-linejoin="round"/>
+      <use href="#cloud-small" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    </symbol>
+
+    <symbol id="g-cloud" viewBox="0 0 24 24">
+      <path d="M15 7.2A4.2 4.2 0 0 0 7.7 6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".5"/>
+      <use href="#cloud-low" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    </symbol>
+
+    <symbol id="g-fog" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <path d="M4 8.5h11.5M8 12h12M4 15.5h9.5M15.5 15.5H20M6.5 19h11"/>
+      </g>
+    </symbol>
+
+    <symbol id="g-drizzle" viewBox="0 0 24 24">
+      <use href="#cloud-high" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <g fill="var(--g-rain, currentColor)">
+        <circle cx="8.5" cy="18.5" r="1"/><circle cx="12.5" cy="20.5" r="1"/><circle cx="16.5" cy="18.5" r="1"/>
+      </g>
+    </symbol>
+
+    <symbol id="g-rain" viewBox="0 0 24 24">
+      <use href="#cloud-high" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M9 17.5l-1 3M13 17.5l-1 3M17 17.5l-1 3" fill="none" stroke="var(--g-rain, currentColor)" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+
+    <symbol id="g-showers" viewBox="0 0 24 24">
+      <g mask="url(#cut-high)" fill="none" stroke="var(--g-sun, currentColor)" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="17.5" cy="6" r="2.8" fill="var(--g-sun-fill, none)"/>
+        <path d="M17.5 1.2v1M21.8 6h1M20.6 2.9l.7-.7"/>
+      </g>
+      <use href="#cloud-high" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M9 17.5l-1 3M13 17.5l-1 3" fill="none" stroke="var(--g-rain, currentColor)" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+
+    <symbol id="g-heavy-rain" viewBox="0 0 24 24">
+      <use href="#cloud-high" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M7.5 17.2l-1.4 4.3M11 17.2l-1.4 4.3M14.5 17.2l-1.4 4.3M18 17.2l-1.4 4.3" fill="none" stroke="var(--g-rain, currentColor)" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+
+    <symbol id="g-sleet" viewBox="0 0 24 24">
+      <use href="#cloud-high" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M9 17.5l-1 3M15 17.5l-1 3" fill="none" stroke="var(--g-rain, currentColor)" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="12" cy="19.6" r="1" fill="var(--g-snow, currentColor)"/>
+    </symbol>
+
+    <symbol id="g-snow" viewBox="0 0 24 24">
+      <use href="#cloud-high" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <g fill="none" stroke="var(--g-snow, currentColor)" stroke-width="1.4" stroke-linecap="round">
+        <path d="M8 17.4v3.2M6.6 18.2l2.8 1.6M6.6 19.8l2.8-1.6"/>
+        <path d="M16 17.4v3.2M14.6 18.2l2.8 1.6M14.6 19.8l2.8-1.6"/>
+      </g>
+      <circle cx="12" cy="21" r=".9" fill="var(--g-snow, currentColor)"/>
+    </symbol>
+
+    <symbol id="g-storm" viewBox="0 0 24 24">
+      <use href="#cloud-high" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M13 15.6l-2.6 3.6h3.2l-2.2 3.4" fill="none" stroke="var(--g-bolt, currentColor)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- interface icons -->
+    <symbol id="i-search" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></g>
+    </symbol>
+    <symbol id="i-locate" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></g>
+    </symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24">
+      <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" fill="var(--pin-fill, none)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <circle cx="12" cy="10" r="2.2" fill="none" stroke="var(--pin-dot, currentColor)" stroke-width="1.8"/>
+    </symbol>
+    <symbol id="i-close" viewBox="0 0 24 24">
+      <path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24">
+      <path d="M12 3.5l5 7h-3.4v10h-3.2v-10H7Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24">
+      <path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V8h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5L21.5 20h-19Z"/><path d="M12 10v4.5"/></g>
+      <circle cx="12" cy="17.2" r="1.1" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-history" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3.2h3.2"/><path d="M12 8v4.3l2.8 1.7"/></g>
+    </symbol>
+  </svg>
+
+  <!-- masthead -->
+  <header id="masthead" class="masthead">
+    <div class="masthead-inner">
+      <a class="wordmark" href="./" aria-label="HazCast home">
+        <svg class="wordmark-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <path d="M3 22h26" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M8 22a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="2"/>
+          <circle cx="21.5" cy="14.5" r="3" fill="var(--accent)"/>
+        </svg>
+        <span class="wordmark-text">HazCast</span>
       </a>
 
       <!-- search -->
-      <form id="search-form" class="search-form" role="search" autocomplete="off">
+      <form id="search-form" class="search" role="search" autocomplete="off">
         <label for="search-input" class="visually-hidden">Search for a city</label>
-        <div class="search-box">
-          <i class="fa-solid fa-magnifying-glass search-icon" aria-hidden="true"></i>
-          <input id="search-input" type="search" role="combobox" aria-autocomplete="list" placeholder="Search for a city..." maxlength="60" aria-controls="suggestions" aria-expanded="false" autocomplete="off">
-          <ul id="suggestions" class="suggestions" aria-label="city suggestions" hidden></ul>
+        <div class="search-field">
+          <svg class="search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+          <input id="search-input" type="search" role="combobox" aria-autocomplete="list" placeholder="Search a city, or city, country" maxlength="60" aria-controls="suggestions" aria-expanded="false" autocomplete="off" enterkeyhint="search">
+          <button id="search-btn" class="search-submit" type="submit">Search</button>
+          <div id="suggestions-panel" class="suggestions-panel" hidden>
+            <p id="suggestions-label" class="suggestions-label">Suggestions</p>
+            <ul id="suggestions" class="suggestions" aria-labelledby="suggestions-label"></ul>
+          </div>
         </div>
-        <button id="search-btn" class="btn btn-primary" type="submit">Search</button>
       </form>
 
-      <!-- header buttons -->
-      <div class="header-actions">
-        <button id="location-btn" class="btn btn-secondary" type="button" aria-label="use my location">
-          <i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i>
-          <span class="btn-text">Use my location</span>
+      <!-- controls -->
+      <div class="controls">
+        <button id="location-btn" class="control-btn" type="button" aria-label="use my location">
+          <svg aria-hidden="true"><use href="#i-locate"/></svg>
+          <span class="btn-text">Locate me</span>
         </button>
 
-        <div class="unit-toggle" role="group" aria-label="temperature unit">
-          <button id="unit-c" class="unit-btn active" type="button" aria-pressed="true">°C</button>
-          <button id="unit-f" class="unit-btn" type="button" aria-pressed="false">°F</button>
+        <div class="unit-toggle" role="group" aria-label="units">
+          <button id="unit-c" class="unit-btn active" type="button" aria-pressed="true" aria-label="Celsius and metric">°C</button>
+          <button id="unit-f" class="unit-btn" type="button" aria-pressed="false" aria-label="Fahrenheit and imperial">°F</button>
         </div>
 
-        <button id="theme-btn" class="icon-btn" type="button" aria-label="switch to dark mode">
-          <i class="fa-solid fa-moon" aria-hidden="true"></i>
+        <button id="theme-btn" class="control-btn icon-only" type="button" aria-label="switch to dark mode">
+          <svg aria-hidden="true"><use href="#g-moon"/></svg>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- main content -->
-  <main id="main" class="layout">
+  <main id="main">
     <h1 class="visually-hidden">HazCast weather dashboard</h1>
 
-    <div class="main-column">
-      <!-- messages and loading -->
-      <p id="message" class="message" role="alert" hidden></p>
-
-      <div id="loading" class="loading" role="status" hidden>
-        <div class="spinner" aria-hidden="true"></div>
-        <p>Loading weather...</p>
+    <!-- the sky: current weather -->
+    <section id="current-card" class="sky" aria-label="current weather">
+      <div class="sky-layers" aria-hidden="true">
+        <div class="sky-paint" data-layer="a"></div>
+        <div class="sky-paint" data-layer="b"></div>
+        <div class="sky-glow"></div>
+        <div class="sky-stars"></div>
+        <div class="sky-clouds"><span></span><span></span><span></span></div>
+        <div class="sky-fog"><span></span><span></span></div>
+        <canvas id="sky-canvas" class="sky-canvas"></canvas>
+        <div class="sky-flash"></div>
+        <div class="sky-scrim"></div>
       </div>
 
-      <div id="weather-content" class="weather-content" hidden>
-        <div class="top-row">
-          <!-- current weather -->
-          <section id="current-card" class="current-card bg-clear" aria-label="current weather">
-            <div class="current-top">
-              <div>
-                <h2 id="city-name" class="city-title">City</h2>
-                <p id="current-date" class="current-meta"></p>
-                <p id="current-time" class="current-meta"></p>
-              </div>
-              <button id="favorite-btn" class="favorite-btn" type="button" aria-pressed="false"></button>
-            </div>
+      <div class="sky-inner">
+        <p id="message" class="message" role="alert" hidden></p>
 
-            <div class="current-main">
-              <i id="current-icon" class="fa-solid fa-sun current-icon" aria-hidden="true"></i>
-              <div>
-                <p id="current-temp" class="current-temp">--</p>
-                <p id="current-condition" class="current-condition">--</p>
-              </div>
-            </div>
-
-            <div class="current-extra">
-              <span id="feels-like" class="pill"></span>
-              <span id="high-low" class="pill"></span>
-            </div>
-          </section>
-
-          <!-- weather details -->
-          <section class="panel details-panel" aria-labelledby="details-title">
-            <h2 id="details-title" class="panel-title">
-              <i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Weather details
-            </h2>
-            <div id="details-grid" class="details-grid"></div>
-          </section>
+        <div id="loading" class="loading" role="status" hidden>
+          <span class="loading-line" aria-hidden="true"></span>
+          <p>Reading the sky…</p>
         </div>
 
-        <!-- hourly forecast -->
-        <section class="panel" aria-labelledby="hourly-title">
-          <h2 id="hourly-title" class="panel-title">
-            <i class="fa-regular fa-clock" aria-hidden="true"></i> Hourly forecast
-          </h2>
-          <div id="hourly-list" class="hourly-list" tabindex="0" aria-label="hourly forecast, scroll sideways to see more"></div>
+        <div id="sky-content" class="sky-content" hidden>
+          <div class="sky-top">
+            <div class="place">
+              <p class="place-kicker">Weather now in</p>
+              <h2 id="city-name" class="place-name">City</h2>
+              <p class="place-meta">
+                <span id="current-date"></span>
+                <span class="dot" aria-hidden="true">·</span>
+                <span id="current-time"></span>
+              </p>
+            </div>
+
+            <div class="sky-actions">
+              <p id="freshness" class="freshness" aria-live="polite"></p>
+              <button id="favorite-btn" class="save-btn" type="button" aria-pressed="false"></button>
+            </div>
+          </div>
+
+          <div class="reading">
+            <p class="reading-temp">
+              <span id="current-temp" class="temp-number">--</span><span id="current-unit" class="temp-unit">°C</span>
+            </p>
+            <div class="reading-text">
+              <p class="condition">
+                <svg id="current-icon" class="condition-glyph" role="img" aria-label=""><use href="#g-cloud"/></svg>
+                <span id="current-condition">--</span>
+              </p>
+              <p id="sky-summary" class="summary"></p>
+              <p class="facts">
+                <span id="feels-like"></span>
+                <span id="high-low"></span>
+              </p>
+            </div>
+          </div>
+
+          <ul id="notices" class="notices" aria-label="forecast notes"></ul>
+        </div>
+      </div>
+
+      <div id="horizon" class="horizon" aria-hidden="true"></div>
+      <p id="horizon-text" class="visually-hidden"></p>
+    </section>
+
+    <!-- the ground: everything under the sky -->
+    <div id="weather-content" class="ground" hidden>
+
+      <!-- saved and recent places -->
+      <nav class="places" aria-labelledby="places-title">
+        <h2 id="places-title" class="label">Places</h2>
+        <ul id="favorites-list" class="places-list"></ul>
+        <ul id="recent-list" class="places-list places-recent" aria-label="recent searches"></ul>
+      </nav>
+
+      <!-- instrument readings -->
+      <section class="block readings-block" aria-labelledby="details-title">
+        <div class="block-head">
+          <h2 id="details-title" class="block-title">Readings</h2>
+          <p id="observed" class="block-note"></p>
+        </div>
+        <div id="details-grid" class="readings"></div>
+      </section>
+
+      <!-- next 24 hours -->
+      <section class="block" aria-labelledby="hourly-title">
+        <div class="block-head">
+          <h2 id="hourly-title" class="block-title">Next 24 hours</h2>
+          <p id="hourly-readout" class="hourly-readout" aria-live="polite"></p>
+        </div>
+        <div class="hourly-legend" aria-hidden="true">
+          <span><i class="key key-temp"></i>Temperature</span>
+          <span><i class="key key-rain"></i>Chance of rain</span>
+          <span><i class="key key-wind"></i>Wind</span>
+        </div>
+        <div id="hourly-list" class="hourly" tabindex="0" role="group" aria-label="hourly forecast. use the left and right arrow keys to read each hour"></div>
+      </section>
+
+      <div class="split">
+        <!-- seven days -->
+        <section class="block daily-block" aria-labelledby="daily-title">
+          <div class="block-head">
+            <h2 id="daily-title" class="block-title">Seven days</h2>
+            <p id="daily-note" class="block-note"></p>
+          </div>
+          <ol id="daily-list" class="daily"></ol>
         </section>
 
-        <!-- 7-day forecast -->
-        <section class="panel" aria-labelledby="daily-title">
-          <h2 id="daily-title" class="panel-title">
-            <i class="fa-regular fa-calendar" aria-hidden="true"></i> 7-day forecast
-          </h2>
-          <ul id="daily-list" class="daily-list"></ul>
-        </section>
+        <div class="side">
+          <!-- air quality -->
+          <section class="block" aria-labelledby="air-title">
+            <div class="block-head">
+              <h2 id="air-title" class="block-title">Air</h2>
+              <p id="air-note" class="block-note"></p>
+            </div>
+            <div id="air-panel" class="air"></div>
+          </section>
+
+          <!-- daylight -->
+          <section class="block" aria-labelledby="daylight-title">
+            <div class="block-head">
+              <h2 id="daylight-title" class="block-title">Daylight</h2>
+            </div>
+            <div id="daylight-panel" class="daylight"></div>
+          </section>
+        </div>
       </div>
     </div>
-
-    <!-- sidebar -->
-    <aside class="sidebar">
-      <section class="panel" aria-labelledby="favorites-title">
-        <h2 id="favorites-title" class="panel-title">
-          <i class="fa-solid fa-heart" aria-hidden="true"></i> Favorite cities
-        </h2>
-        <ul id="favorites-list" class="city-list"></ul>
-      </section>
-
-      <section class="panel" aria-labelledby="recent-title">
-        <h2 id="recent-title" class="panel-title">
-          <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Recent searches
-        </h2>
-        <ul id="recent-list" class="city-list"></ul>
-      </section>
-    </aside>
   </main>
 
   <!-- footer -->
   <footer class="footer">
     <div class="footer-inner">
-      <p><strong>HazCast</strong> · built with HTML, CSS &amp; JavaScript</p>
-      <p>Weather data provided by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></p>
+      <p class="footer-brand"><strong>HazCast</strong> · built with HTML, CSS &amp; JavaScript</p>
+      <p>
+        Forecast and air quality by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
+        Open-Meteo does not publish official weather warnings, so HazCast cannot show them. For warnings, check your national weather service.
+      </p>
       <p>
         Developer: Hazim Aqil ·
         <a href="https://github.com/hazell-lab/" target="_blank" rel="noopener">GitHub</a> ·

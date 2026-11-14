@@ -3,6 +3,7 @@
 // api addresses
 const geocodingUrl = "https://geocoding-api.open-meteo.com/v1/search";
 const weatherUrl = "https://api.open-meteo.com/v1/forecast";
+const airQualityUrl = "https://air-quality-api.open-meteo.com/v1/air-quality";
 const reverseGeocodeUrl = "https://api.bigdatacloud.net/data/reverse-geocode-client";
 
 // weather fields to request
@@ -15,15 +16,24 @@ const currentFields = [
   "weather_code",
   "pressure_msl",
   "wind_speed_10m",
-  "wind_direction_10m"
+  "wind_direction_10m",
+  "wind_gusts_10m",
+  "dew_point_2m",
+  "cloud_cover",
+  "visibility",
+  "uv_index"
 ];
 
 const hourlyFields = [
   "temperature_2m",
   "precipitation_probability",
+  "precipitation",
   "weather_code",
   "is_day",
-  "visibility"
+  "visibility",
+  "wind_speed_10m",
+  "wind_direction_10m",
+  "pressure_msl"
 ];
 
 const dailyFields = [
@@ -33,7 +43,21 @@ const dailyFields = [
   "sunrise",
   "sunset",
   "uv_index_max",
-  "precipitation_probability_max"
+  "precipitation_probability_max",
+  "precipitation_sum",
+  "daylight_duration"
+];
+
+const airFields = [
+  "us_aqi",
+  "pm2_5",
+  "pm10",
+  "ozone",
+  "nitrogen_dioxide",
+  "alder_pollen",
+  "birch_pollen",
+  "grass_pollen",
+  "ragweed_pollen"
 ];
 
 // local storage keys
@@ -41,6 +65,7 @@ const favoritesKey = "hazcast-favorites";
 const recentKey = "hazcast-recent";
 const unitKey = "hazcast-unit";
 const themeKey = "hazcast-theme";
+const cacheKey = "hazcast-cache";
 
 // the app used to be called skycast, so old saved data may use these keys
 const oldKeys = {
@@ -53,6 +78,7 @@ const oldKeys = {
 // limits
 const maxFavorites = 8;
 const maxRecent = 5;
+const maxCached = 8;
 
 // refresh the weather every 10 minutes
 const refreshTime = 10 * 60 * 1000;
@@ -67,44 +93,48 @@ const defaultCity = {
 };
 
 // weather codes from open-meteo
+// glyph names match the svg symbols in index.html, level is how heavy it is (1 to 3)
 const weatherCodes = {
-  0: { name: "Clear sky", dayIcon: "fa-sun", nightIcon: "fa-moon", type: "clear" },
-  1: { name: "Mainly clear", dayIcon: "fa-sun", nightIcon: "fa-moon", type: "clear" },
-  2: { name: "Partly cloudy", dayIcon: "fa-cloud-sun", nightIcon: "fa-cloud-moon", type: "cloudy" },
-  3: { name: "Overcast", dayIcon: "fa-cloud", nightIcon: "fa-cloud", type: "cloudy" },
-  45: { name: "Fog", dayIcon: "fa-smog", nightIcon: "fa-smog", type: "fog" },
-  48: { name: "Freezing fog", dayIcon: "fa-smog", nightIcon: "fa-smog", type: "fog" },
-  51: { name: "Light drizzle", dayIcon: "fa-cloud-sun-rain", nightIcon: "fa-cloud-moon-rain", type: "rain" },
-  53: { name: "Drizzle", dayIcon: "fa-cloud-sun-rain", nightIcon: "fa-cloud-moon-rain", type: "rain" },
-  55: { name: "Heavy drizzle", dayIcon: "fa-cloud-rain", nightIcon: "fa-cloud-rain", type: "rain" },
-  56: { name: "Freezing drizzle", dayIcon: "fa-cloud-rain", nightIcon: "fa-cloud-rain", type: "rain" },
-  57: { name: "Heavy freezing drizzle", dayIcon: "fa-cloud-rain", nightIcon: "fa-cloud-rain", type: "rain" },
-  61: { name: "Light rain", dayIcon: "fa-cloud-rain", nightIcon: "fa-cloud-rain", type: "rain" },
-  63: { name: "Rain", dayIcon: "fa-cloud-rain", nightIcon: "fa-cloud-rain", type: "rain" },
-  65: { name: "Heavy rain", dayIcon: "fa-cloud-showers-heavy", nightIcon: "fa-cloud-showers-heavy", type: "rain" },
-  66: { name: "Freezing rain", dayIcon: "fa-cloud-rain", nightIcon: "fa-cloud-rain", type: "rain" },
-  67: { name: "Heavy freezing rain", dayIcon: "fa-cloud-showers-heavy", nightIcon: "fa-cloud-showers-heavy", type: "rain" },
-  71: { name: "Light snow", dayIcon: "fa-snowflake", nightIcon: "fa-snowflake", type: "snow" },
-  73: { name: "Snow", dayIcon: "fa-snowflake", nightIcon: "fa-snowflake", type: "snow" },
-  75: { name: "Heavy snow", dayIcon: "fa-snowflake", nightIcon: "fa-snowflake", type: "snow" },
-  77: { name: "Snow grains", dayIcon: "fa-snowflake", nightIcon: "fa-snowflake", type: "snow" },
-  80: { name: "Light rain showers", dayIcon: "fa-cloud-sun-rain", nightIcon: "fa-cloud-moon-rain", type: "rain" },
-  81: { name: "Rain showers", dayIcon: "fa-cloud-sun-rain", nightIcon: "fa-cloud-moon-rain", type: "rain" },
-  82: { name: "Violent rain showers", dayIcon: "fa-cloud-showers-heavy", nightIcon: "fa-cloud-showers-heavy", type: "rain" },
-  85: { name: "Light snow showers", dayIcon: "fa-snowflake", nightIcon: "fa-snowflake", type: "snow" },
-  86: { name: "Heavy snow showers", dayIcon: "fa-snowflake", nightIcon: "fa-snowflake", type: "snow" },
-  95: { name: "Thunderstorm", dayIcon: "fa-cloud-bolt", nightIcon: "fa-cloud-bolt", type: "storm" },
-  96: { name: "Thunderstorm with hail", dayIcon: "fa-cloud-bolt", nightIcon: "fa-cloud-bolt", type: "storm" },
-  99: { name: "Severe thunderstorm with hail", dayIcon: "fa-cloud-bolt", nightIcon: "fa-cloud-bolt", type: "storm" }
+  0: { name: "Clear sky", day: "g-sun", night: "g-moon", type: "clear" },
+  1: { name: "Mainly clear", day: "g-sun", night: "g-moon", type: "clear" },
+  2: { name: "Partly cloudy", day: "g-cloud-sun", night: "g-cloud-moon", type: "clear", partial: true },
+  3: { name: "Overcast", day: "g-cloud", night: "g-cloud", type: "cloudy" },
+  45: { name: "Fog", day: "g-fog", night: "g-fog", type: "fog" },
+  48: { name: "Freezing fog", day: "g-fog", night: "g-fog", type: "fog" },
+  51: { name: "Light drizzle", day: "g-drizzle", night: "g-drizzle", type: "rain", level: 1 },
+  53: { name: "Drizzle", day: "g-drizzle", night: "g-drizzle", type: "rain", level: 1 },
+  55: { name: "Heavy drizzle", day: "g-drizzle", night: "g-drizzle", type: "rain", level: 2 },
+  56: { name: "Freezing drizzle", day: "g-sleet", night: "g-sleet", type: "rain", level: 1 },
+  57: { name: "Heavy freezing drizzle", day: "g-sleet", night: "g-sleet", type: "rain", level: 2 },
+  61: { name: "Light rain", day: "g-rain", night: "g-rain", type: "rain", level: 1 },
+  63: { name: "Rain", day: "g-rain", night: "g-rain", type: "rain", level: 2 },
+  65: { name: "Heavy rain", day: "g-heavy-rain", night: "g-heavy-rain", type: "rain", level: 3 },
+  66: { name: "Freezing rain", day: "g-sleet", night: "g-sleet", type: "rain", level: 2 },
+  67: { name: "Heavy freezing rain", day: "g-sleet", night: "g-sleet", type: "rain", level: 3 },
+  71: { name: "Light snow", day: "g-snow", night: "g-snow", type: "snow", level: 1 },
+  73: { name: "Snow", day: "g-snow", night: "g-snow", type: "snow", level: 2 },
+  75: { name: "Heavy snow", day: "g-snow", night: "g-snow", type: "snow", level: 3 },
+  77: { name: "Snow grains", day: "g-snow", night: "g-snow", type: "snow", level: 1 },
+  80: { name: "Light rain showers", day: "g-showers", night: "g-rain", type: "rain", level: 1 },
+  81: { name: "Rain showers", day: "g-showers", night: "g-rain", type: "rain", level: 2 },
+  82: { name: "Violent rain showers", day: "g-heavy-rain", night: "g-heavy-rain", type: "rain", level: 3 },
+  85: { name: "Light snow showers", day: "g-snow", night: "g-snow", type: "snow", level: 1 },
+  86: { name: "Heavy snow showers", day: "g-snow", night: "g-snow", type: "snow", level: 3 },
+  95: { name: "Thunderstorm", day: "g-storm", night: "g-storm", type: "storm", level: 2 },
+  96: { name: "Thunderstorm with hail", day: "g-storm", night: "g-storm", type: "storm", level: 3 },
+  99: { name: "Severe thunderstorm with hail", day: "g-storm", night: "g-storm", type: "storm", level: 3 }
 };
 
 // used when a weather code is not in the list
-const unknownWeather = { name: "Unknown", dayIcon: "fa-cloud", nightIcon: "fa-cloud", type: "cloudy" };
+const unknownWeather = { name: "Unknown", day: "g-cloud", night: "g-cloud", type: "cloudy" };
 
 // page elements
+const masthead = document.getElementById("masthead");
 const searchForm = document.getElementById("search-form");
 const searchInput = document.getElementById("search-input");
 const searchBtn = document.getElementById("search-btn");
+const suggestionsPanel = document.getElementById("suggestions-panel");
+const suggestionsLabel = document.getElementById("suggestions-label");
 const suggestionsList = document.getElementById("suggestions");
 const locationBtn = document.getElementById("location-btn");
 const unitCBtn = document.getElementById("unit-c");
@@ -113,6 +143,7 @@ const themeBtn = document.getElementById("theme-btn");
 
 const messageBox = document.getElementById("message");
 const loadingBox = document.getElementById("loading");
+const skyContent = document.getElementById("sky-content");
 const weatherContent = document.getElementById("weather-content");
 
 const currentCard = document.getElementById("current-card");
@@ -121,22 +152,38 @@ const currentDate = document.getElementById("current-date");
 const currentTime = document.getElementById("current-time");
 const currentIcon = document.getElementById("current-icon");
 const currentTemp = document.getElementById("current-temp");
+const currentUnit = document.getElementById("current-unit");
 const currentCondition = document.getElementById("current-condition");
+const skySummary = document.getElementById("sky-summary");
 const feelsLike = document.getElementById("feels-like");
 const highLow = document.getElementById("high-low");
 const favoriteBtn = document.getElementById("favorite-btn");
+const freshness = document.getElementById("freshness");
+const noticesList = document.getElementById("notices");
+const horizon = document.getElementById("horizon");
+const horizonText = document.getElementById("horizon-text");
 
+const observedNote = document.getElementById("observed");
 const detailsGrid = document.getElementById("details-grid");
 const hourlyList = document.getElementById("hourly-list");
+const hourlyReadout = document.getElementById("hourly-readout");
 const dailyList = document.getElementById("daily-list");
+const dailyNote = document.getElementById("daily-note");
+const airPanel = document.getElementById("air-panel");
+const airNote = document.getElementById("air-note");
+const daylightPanel = document.getElementById("daylight-panel");
 const favoritesList = document.getElementById("favorites-list");
 const recentList = document.getElementById("recent-list");
+
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 // app data
 let unit = "C";
 let theme = "light";
 let currentCity = null;
 let weatherData = null;
+let airData = null;
+let dataSource = "live";
 let favorites = [];
 let recentSearches = [];
 let favoriteTemps = {};
@@ -145,17 +192,29 @@ let searchTimer;
 let messageTimer;
 let latestRequest = 0;
 let lastLoaded = 0;
+let refreshFailed = false;
+let activeHour = 0;
+let shownTemp = null;
 
-//  api 
+//  api
 
 // fetch json from an address
+// requests give up after 12 seconds so a slow network falls back to saved data
 async function fetchJson(url) {
   let response;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
 
   try {
-    response = await fetch(url);
+    response = await fetch(url, { signal: controller.signal });
   } catch (error) {
     throw new Error("network error");
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (response.status === 429) {
+    throw new Error("rate limit");
   }
 
   if (!response.ok) {
@@ -203,14 +262,27 @@ async function getCoordinates(query) {
 }
 
 // get weather data for a city
+// past_hours gives three earlier hours, used for the pressure trend
 async function getWeather(city) {
   const url = `${weatherUrl}?latitude=${city.latitude}&longitude=${city.longitude}`
     + `&current=${currentFields.join(",")}`
     + `&hourly=${hourlyFields.join(",")}`
     + `&daily=${dailyFields.join(",")}`
-    + "&timezone=auto&forecast_days=7";
+    + "&timezone=auto&forecast_days=7&past_hours=3";
 
   return await fetchJson(url);
+}
+
+// get air quality for a city. this never throws, the page works without it
+async function getAirQuality(city) {
+  try {
+    const url = `${airQualityUrl}?latitude=${city.latitude}&longitude=${city.longitude}`
+      + `&current=${airFields.join(",")}&timezone=auto`;
+    const data = await fetchJson(url);
+    return data.current || null;
+  } catch (error) {
+    return null;
+  }
 }
 
 // get the place name for coordinates
@@ -239,38 +311,28 @@ function makeCity(result) {
   };
 }
 
-//  weather codes 
+//  weather codes
 
-// turn a weather code into a name, icon and type
+// turn a weather code into a name, glyph and type
 function getWeatherInfo(code, isDay) {
   const info = weatherCodes[code] || unknownWeather;
 
   return {
     name: info.name,
-    icon: isDay ? info.dayIcon : info.nightIcon,
-    type: info.type
+    glyph: isDay ? info.day : info.night,
+    type: info.type,
+    level: info.level || 0,
+    partial: Boolean(info.partial)
   };
 }
 
-// pick a background class for the current weather card
-function getBackgroundClass(type, isDay) {
-  if (!isDay) {
-    return "bg-night";
-  }
-
-  return `bg-${type}`;
+// svg markup for a glyph
+function glyph(name, className, label) {
+  const a11y = label ? `role="img" aria-label="${escapeHtml(label)}"` : 'aria-hidden="true"';
+  return `<svg class="${className}" ${a11y}><use href="#${name}"/></svg>`;
 }
 
-// pick a color class for small icons
-function getIconClass(type, isDay) {
-  if (!isDay && type === "clear") {
-    return "icon-night";
-  }
-
-  return `icon-${type}`;
-}
-
-//  helpers 
+//  helpers
 
 // convert celsius to the selected unit
 function convertTemp(celsius) {
@@ -281,9 +343,19 @@ function convertTemp(celsius) {
   return Math.round(celsius);
 }
 
+// use a real minus sign for temperatures below zero
+function signed(number) {
+  return number < 0 ? `−${Math.abs(number)}` : `${number}`;
+}
+
 // show a temperature with its unit
 function formatTemp(celsius) {
-  return `${convertTemp(celsius)}°${unit}`;
+  return `${signed(convertTemp(celsius))}°${unit}`;
+}
+
+// show a temperature with just the degree sign
+function formatDeg(celsius) {
+  return `${signed(convertTemp(celsius))}°`;
 }
 
 // show wind speed in km/h, or mph when using fahrenheit
@@ -295,6 +367,12 @@ function formatWind(kmh) {
   return `${Math.round(kmh)} km/h`;
 }
 
+// split a value and its unit so the unit can be styled smaller
+function splitUnit(text) {
+  const index = text.lastIndexOf(" ");
+  return { value: text.slice(0, index), unit: text.slice(index + 1) };
+}
+
 // show visibility in km, or miles when using fahrenheit
 function formatDistance(meters) {
   if (unit === "F") {
@@ -302,6 +380,15 @@ function formatDistance(meters) {
   }
 
   return `${(meters / 1000).toFixed(1)} km`;
+}
+
+// show rain amounts in mm, or inches when using fahrenheit
+function formatRain(mm) {
+  if (unit === "F") {
+    return `${(mm / 25.4).toFixed(2)} in`;
+  }
+
+  return `${mm < 10 ? mm.toFixed(1) : Math.round(mm)} mm`;
 }
 
 // make text safe to put inside innerHTML
@@ -338,6 +425,14 @@ function getUvLevel(uv) {
   return "Extreme";
 }
 
+// describe visibility in words
+function getVisibilityLevel(meters) {
+  if (meters < 1000) return "Very poor";
+  if (meters < 4000) return "Poor, misty";
+  if (meters < 10000) return "Moderate";
+  return "Good";
+}
+
 // find the current hour in the hourly data
 function getCurrentHourIndex() {
   const hourText = weatherData.current.time.slice(0, 13) + ":00";
@@ -345,12 +440,23 @@ function getCurrentHourIndex() {
   return index === -1 ? 0 : index;
 }
 
+// open-meteo gives local times without a zone.
+// reading them as utc lets us compare them with the city's own clock
+function localToMs(timeText) {
+  return Date.parse(`${timeText}Z`);
+}
+
+// the city's clock right now, on the same scale as localToMs
+function cityNowMs() {
+  return Date.now() + (weatherData.utc_offset_seconds || 0) * 1000;
+}
+
 // format dates and times
 function getLocalDate(timezone) {
   const now = new Date();
   const weekday = now.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone });
-  const rest = now.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: timezone });
-  return `${weekday}, ${rest}`;
+  const rest = now.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: timezone });
+  return `${weekday} ${rest}`;
 }
 
 function getLocalTime(timezone) {
@@ -373,7 +479,65 @@ function formatDayDate(dateText) {
   return new Date(`${dateText}T00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-//  messages and loading 
+// "3 min ago", "2 h ago"
+function formatAge(ms) {
+  const minutes = Math.round(ms / 60000);
+
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+// "12 h 4 min"
+function formatDuration(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.round((seconds % 3600) / 60);
+  return `${hours} h ${minutes} min`;
+}
+
+// mix between two hex colors
+function mixColor(from, to, amount) {
+  const a = from.match(/\w\w/g).map((part) => parseInt(part, 16));
+  const b = to.match(/\w\w/g).map((part) => parseInt(part, 16));
+  const mixed = a.map((value, index) => Math.round(value + (b[index] - value) * amount));
+  return `rgb(${mixed.join(", ")})`;
+}
+
+// color for a temperature in celsius, from the ramp in the css
+const tempStops = [
+  [-5, "6aa7c8"],
+  [5, "79b6b1"],
+  [14, "b8c37a"],
+  [22, "e6b23c"],
+  [30, "df7a3a"],
+  [38, "c4462f"]
+];
+
+function tempColor(celsius) {
+  if (celsius <= tempStops[0][0]) return `#${tempStops[0][1]}`;
+
+  for (let i = 1; i < tempStops.length; i++) {
+    const [stopTemp, stopColor] = tempStops[i];
+
+    if (celsius <= stopTemp) {
+      const [lastTemp, lastColor] = tempStops[i - 1];
+      return mixColor(lastColor, stopColor, (celsius - lastTemp) / (stopTemp - lastTemp));
+    }
+  }
+
+  return `#${tempStops[tempStops.length - 1][1]}`;
+}
+
+// round coordinates to about 1 km so an exact position is never sent or saved
+function roundCoord(value) {
+  return Math.round(value * 100) / 100;
+}
+
+//  messages and loading
 
 // show a message
 function showMessage(text, type) {
@@ -400,17 +564,24 @@ function hideMessage() {
 }
 
 // show or hide loading state
+// the first load shows a loading line in the sky, later loads just dim the page
 function showLoading(isLoading) {
-  loadingBox.hidden = !isLoading;
+  loadingBox.hidden = !isLoading || weatherData !== null;
   searchBtn.disabled = isLoading;
   locationBtn.disabled = isLoading;
   weatherContent.classList.toggle("is-loading", isLoading);
+  skyContent.classList.toggle("is-loading", isLoading);
+  currentCard.setAttribute("aria-busy", isLoading);
 }
 
 // turn an error into a friendly message
 function getErrorMessage(error) {
   if (error.message === "city not found") {
     return "City not found. Try another location.";
+  }
+
+  if (error.message === "rate limit") {
+    return "Open-Meteo is getting too many requests right now. Please try again in a minute.";
   }
 
   if (error.message === "network error" || !navigator.onLine) {
@@ -472,8 +643,10 @@ function readList(key) {
 function saveValue(key, value) {
   try {
     localStorage.setItem(key, value);
+    return true;
   } catch (error) {
     console.log("could not save", key);
+    return false;
   }
 }
 
@@ -515,7 +688,39 @@ function loadTheme() {
   applyTheme();
 }
 
-//  search 
+//  weather cache
+// the last response for each place is kept so the page can show something
+// straight away, and still work when offline or rate limited
+
+function readCache() {
+  try {
+    const saved = JSON.parse(readValue(cacheKey) || "{}");
+    return saved && typeof saved === "object" ? saved : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function getCached(city) {
+  const entry = readCache()[getCityId(city)];
+  return entry && entry.data && entry.data.current ? entry : null;
+}
+
+function saveToCache(city, data, air) {
+  const cache = readCache();
+  cache[getCityId(city)] = { data, air, savedAt: Date.now() };
+
+  // keep only the newest few places
+  const ids = Object.keys(cache).sort((a, b) => cache[b].savedAt - cache[a].savedAt);
+  ids.slice(maxCached).forEach((id) => delete cache[id]);
+
+  if (!saveValue(cacheKey, JSON.stringify(cache))) {
+    // storage is full, start again with just this place
+    saveValue(cacheKey, JSON.stringify({ [getCityId(city)]: cache[getCityId(city)] }));
+  }
+}
+
+//  search
 
 // search for a city
 async function searchCity(event) {
@@ -564,16 +769,26 @@ async function showCityWeather(city, saveToRecent = true) {
   // only the newest request is allowed to update the page
   const requestId = ++latestRequest;
 
+  // show saved data for this place straight away, if there is any
+  const cached = getCached(city);
+  const switching = !currentCity || getCityId(city) !== getCityId(currentCity);
+
+  if (cached && switching) {
+    applyData(city, cached.data, cached.air, "saved", cached.savedAt);
+  }
+
+  // air quality loads alongside, but the forecast never waits for it
+  const airRequest = getAirQuality(city);
+
   try {
     const data = await getWeather(city);
 
     if (requestId !== latestRequest) return;
 
-    weatherData = data;
-    currentCity = city;
-    lastLoaded = Date.now();
-    weatherContent.hidden = false;
-    renderWeather();
+    const keepAir = cached && !switching ? airData : cached ? cached.air : null;
+    applyData(city, data, keepAir, "live", Date.now());
+    saveToCache(city, data, keepAir);
+    fillAir(city, airRequest, requestId);
 
     if (saveToRecent) {
       addRecentSearch(city);
@@ -583,7 +798,20 @@ async function showCityWeather(city, saveToRecent = true) {
   } catch (error) {
     console.error(error);
 
-    if (requestId === latestRequest) {
+    if (requestId !== latestRequest) return;
+
+    if (cached) {
+      showMessage(`${getErrorMessage(error)} Showing saved data from ${formatAge(Date.now() - cached.savedAt)}.`, "error");
+
+      if (saveToRecent) {
+        addRecentSearch(city);
+      }
+    } else if (!weatherData) {
+      // nothing on screen yet, so offer a way to try again
+      showError(getErrorMessage(error));
+      messageBox.insertAdjacentHTML("beforeend", ' <button class="message-retry" type="button">Try again</button>');
+      messageBox.querySelector(".message-retry").addEventListener("click", () => showCityWeather(city, saveToRecent));
+    } else {
       showError(getErrorMessage(error));
     }
   } finally {
@@ -593,6 +821,32 @@ async function showCityWeather(city, saveToRecent = true) {
   }
 }
 
+// show air quality once it arrives, if the same place is still on screen
+async function fillAir(city, airRequest, requestId) {
+  const air = await airRequest;
+
+  if (requestId !== latestRequest || !air) return;
+
+  airData = air;
+  renderAir();
+  renderNotices();
+  saveToCache(city, weatherData, airData);
+}
+
+// put new data on the page
+function applyData(city, data, air, source, loadedAt) {
+  weatherData = data;
+  airData = air;
+  currentCity = city;
+  dataSource = source;
+  lastLoaded = loadedAt;
+  refreshFailed = false;
+  loadingBox.hidden = true;
+  skyContent.hidden = false;
+  weatherContent.hidden = false;
+  renderWeather();
+}
+
 // quietly load new data for the city on screen
 async function refreshWeather() {
   if (!currentCity || document.hidden) return;
@@ -600,16 +854,22 @@ async function refreshWeather() {
   const city = currentCity;
 
   try {
-    const data = await getWeather(city);
+    const [data, air] = await Promise.all([getWeather(city), getAirQuality(city)]);
 
     // skip it if the user opened another city while this was loading
     if (city !== currentCity) return;
 
     weatherData = data;
+    airData = air || airData;
+    dataSource = "live";
     lastLoaded = Date.now();
+    refreshFailed = false;
+    saveToCache(city, data, airData);
     renderWeather();
   } catch (error) {
     console.log("could not refresh weather");
+    refreshFailed = true;
+    renderFreshness();
   }
 }
 
@@ -620,11 +880,38 @@ function handleSearchInput() {
   const query = searchInput.value.trim();
 
   if (query.length < 2) {
-    hideSuggestions();
+    if (query.length === 0) {
+      showRecentInSearch();
+    } else {
+      hideSuggestions();
+    }
     return;
   }
 
   searchTimer = setTimeout(() => showSuggestions(query), 300);
+}
+
+// fill the drop down with a list of cities
+function fillSuggestions(cities, label, icon) {
+  suggestionResults = cities;
+  suggestionsLabel.textContent = label;
+
+  suggestionsList.innerHTML = cities.map((city, index) => {
+    const place = city.country ? `${city.name}, ${city.country}` : city.name;
+
+    return `
+      <li>
+        <button class="suggestion-btn" type="button" data-index="${index}">
+          <svg aria-hidden="true"><use href="#${icon}"/></svg>
+          <span class="suggestion-name">${escapeHtml(place)}</span>
+          <span class="suggestion-region">${escapeHtml(city.region)}</span>
+        </button>
+      </li>
+    `;
+  }).join("");
+
+  suggestionsPanel.hidden = false;
+  searchInput.setAttribute("aria-expanded", "true");
 }
 
 // show city suggestions
@@ -637,35 +924,31 @@ async function showSuggestions(query) {
       return;
     }
 
-    suggestionResults = results.map((result) => makeCity(result));
+    const cities = results.map((result) => makeCity(result));
 
-    if (suggestionResults.length === 0) {
+    if (cities.length === 0) {
       hideSuggestions();
       return;
     }
 
-    suggestionsList.innerHTML = suggestionResults.map((city, index) => {
-      const place = city.country ? `${city.name}, ${city.country}` : city.name;
-
-      return `
-        <li>
-          <button class="suggestion-btn" type="button" data-index="${index}">
-            <span class="suggestion-name">${escapeHtml(place)}</span>
-            <span class="suggestion-region">${escapeHtml(city.region)}</span>
-          </button>
-        </li>
-      `;
-    }).join("");
-
-    suggestionsList.hidden = false;
-    searchInput.setAttribute("aria-expanded", "true");
+    fillSuggestions(cities, "Suggestions", "i-pin");
   } catch (error) {
     hideSuggestions();
   }
 }
 
+// show recent searches when the search box is empty
+function showRecentInSearch() {
+  if (recentSearches.length === 0 || searchInput.value.trim() !== "") {
+    hideSuggestions();
+    return;
+  }
+
+  fillSuggestions(recentSearches, "Recent searches", "i-history");
+}
+
 function hideSuggestions() {
-  suggestionsList.hidden = true;
+  suggestionsPanel.hidden = true;
   suggestionsList.innerHTML = "";
   searchInput.setAttribute("aria-expanded", "false");
 }
@@ -709,12 +992,13 @@ function handleSuggestionClick(event) {
   showCityWeather(city);
 }
 
-//  current location 
+//  current location
 
 // use the browser location
 function getCurrentLocation() {
   if (!navigator.geolocation) {
-    showError("Your browser does not support geolocation.");
+    showError("Your browser does not support geolocation. Search for a city instead.");
+    searchInput.focus();
     return;
   }
 
@@ -722,13 +1006,14 @@ function getCurrentLocation() {
   showLoading(true);
 
   navigator.geolocation.getCurrentPosition(handleLocationSuccess, handleLocationError, {
-    timeout: 10000
+    timeout: 10000,
+    maximumAge: 10 * 60 * 1000
   });
 }
 
 async function handleLocationSuccess(position) {
-  const latitude = position.coords.latitude;
-  const longitude = position.coords.longitude;
+  const latitude = roundCoord(position.coords.latitude);
+  const longitude = roundCoord(position.coords.longitude);
   const place = await getPlaceName(latitude, longitude);
 
   const city = {
@@ -746,27 +1031,96 @@ function handleLocationError(error) {
   showLoading(false);
 
   if (error.code === 1) {
-    showError("Location permission was denied.");
+    showError("Location permission was denied. You can still search for any city.");
   } else if (error.code === 2) {
     showError("Location is unavailable. Try searching for a city instead.");
   } else if (error.code === 3) {
-    showError("Location request timed out. Please try again.");
+    showError("Location request timed out. Please try again, or search for a city.");
   } else {
-    showError("Could not get your location.");
+    showError("Could not get your location. Search for a city instead.");
   }
+
+  searchInput.focus();
 }
 
-//  show weather 
+//  show weather
 
 // show all weather sections
 function renderWeather() {
-  favoriteTemps[getCityId(currentCity)] = weatherData.current.temperature_2m;
+  favoriteTemps[getCityId(currentCity)] = {
+    temp: weatherData.current.temperature_2m,
+    code: weatherData.current.weather_code,
+    isDay: weatherData.current.is_day === 1
+  };
 
+  renderSky();
   renderCurrentWeather();
+  renderFreshness();
+  renderNotices();
+  renderHorizon();
   renderDetails();
   renderHourlyForecast();
   renderDailyForecast();
+  renderAir();
+  renderDaylight();
   renderFavorites();
+  renderRecentSearches();
+}
+
+// work out dawn, day, dusk or night from the sun times
+function getPhase() {
+  const daily = weatherData.daily;
+  const isDay = weatherData.current.is_day === 1;
+  const now = cityNowMs();
+  const rise = daily.sunrise && daily.sunrise[0] ? localToMs(daily.sunrise[0]) : NaN;
+  const set = daily.sunset && daily.sunset[0] ? localToMs(daily.sunset[0]) : NaN;
+  const margin = 50 * 60 * 1000;
+
+  if (!Number.isNaN(rise) && Math.abs(now - rise) < margin) return "dawn";
+  if (!Number.isNaN(set) && Math.abs(now - set) < margin) return "dusk";
+
+  return isDay ? "day" : "night";
+}
+
+// paint the sky for the current weather
+function renderSky() {
+  const current = weatherData.current;
+  const isDay = current.is_day === 1;
+  const info = getWeatherInfo(current.weather_code, isDay);
+  const phase = getPhase();
+  const mood = `${info.type}-${isDay ? "day" : "night"}`;
+
+  currentCard.dataset.sky = mood;
+  currentCard.dataset.phase = phase;
+  currentCard.dataset.cover = info.partial ? "partial" : "full";
+
+  // dawn and dusk glow is strongest when the sky is clear
+  const glow = { clear: 1, cloudy: 0.55, fog: 0.35, rain: 0.35, snow: 0.45, storm: 0.25 };
+  currentCard.style.setProperty("--glow-strength", glow[info.type] ?? 0.5);
+
+  // fade the new gradient in over the old one
+  const styles = getComputedStyle(currentCard);
+  const top = styles.getPropertyValue("--sky-a").trim();
+  const middle = styles.getPropertyValue("--sky-b").trim();
+  const bottom = styles.getPropertyValue("--sky-c").trim();
+  const gradient = `linear-gradient(180deg, ${top} 0%, ${middle} 58%, ${bottom} 100%)`;
+  const layers = currentCard.querySelectorAll(".sky-paint");
+  const shown = currentCard.querySelector(".sky-paint.is-current");
+
+  if (!shown || shown.dataset.gradient !== gradient) {
+    const next = shown === layers[0] ? layers[1] : layers[0];
+    next.style.background = gradient;
+    next.dataset.gradient = gradient;
+    next.classList.add("is-current");
+
+    if (shown) {
+      shown.classList.remove("is-current");
+    }
+  }
+
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", top);
+  updateMasthead();
+  skyMotion.set(info.type, info.level);
 }
 
 // show current weather
@@ -776,16 +1130,93 @@ function renderCurrentWeather() {
   const isDay = current.is_day === 1;
   const info = getWeatherInfo(current.weather_code, isDay);
 
-  currentCard.className = `current-card ${getBackgroundClass(info.type, isDay)}`;
   cityName.textContent = currentCity.country ? `${currentCity.name}, ${currentCity.country}` : currentCity.name;
-  currentIcon.className = `fa-solid ${info.icon} current-icon`;
-  currentTemp.textContent = formatTemp(current.temperature_2m);
+  currentIcon.innerHTML = `<use href="#${info.glyph}"/>`;
+  currentIcon.setAttribute("aria-label", info.name);
   currentCondition.textContent = info.name;
-  feelsLike.textContent = `Feels like ${formatTemp(current.apparent_temperature)}`;
-  highLow.textContent = `H: ${formatTemp(daily.temperature_2m_max[0])} · L: ${formatTemp(daily.temperature_2m_min[0])}`;
+  currentUnit.textContent = `°${unit}`;
+  animateTemp(convertTemp(current.temperature_2m));
+
+  feelsLike.innerHTML = `Feels like <strong>${formatDeg(current.apparent_temperature)}</strong>`;
+  highLow.innerHTML = `High <strong>${formatDeg(daily.temperature_2m_max[0])}</strong> · Low <strong>${formatDeg(daily.temperature_2m_min[0])}</strong>`;
+  skySummary.textContent = buildSummary();
 
   updateClock();
   updateFavoriteButton();
+}
+
+// count the big number up or down to its new value
+function animateTemp(target) {
+  const start = shownTemp;
+  shownTemp = target;
+  currentTemp.setAttribute("aria-label", `${target} degrees ${unit === "C" ? "Celsius" : "Fahrenheit"}`);
+
+  if (start === null || start === target || reducedMotion.matches) {
+    currentTemp.textContent = signed(target);
+    return;
+  }
+
+  const begin = performance.now();
+  const duration = 600;
+
+  function step(now) {
+    const progress = Math.min((now - begin) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    currentTemp.textContent = signed(Math.round(start + (target - start) * eased));
+
+    if (progress < 1 && shownTemp === target) {
+      requestAnimationFrame(step);
+    }
+  }
+
+  requestAnimationFrame(step);
+}
+
+// a short sentence about what is coming, made only from the forecast data
+function buildSummary() {
+  const current = weatherData.current;
+  const hourly = weatherData.hourly;
+  const start = getCurrentHourIndex();
+  const info = getWeatherInfo(current.weather_code, true);
+  const parts = [];
+
+  // feels like
+  const difference = convertTemp(current.apparent_temperature) - convertTemp(current.temperature_2m);
+
+  if (difference >= 3) {
+    parts.push(`Humid air makes it feel ${difference}° warmer.`);
+  } else if (difference <= -3) {
+    parts.push(current.wind_speed_10m >= 15 ? `Wind makes it feel ${-difference}° colder.` : `It feels ${-difference}° colder.`);
+  }
+
+  // rain in the next 12 hours
+  const next = [];
+
+  for (let i = start + 1; i <= start + 12 && i < hourly.time.length; i++) {
+    next.push({ time: hourly.time[i], chance: hourly.precipitation_probability[i] ?? 0 });
+  }
+
+  const wet = info.type === "rain" || info.type === "storm" || info.type === "snow";
+
+  if (next.length > 0) {
+    if (wet) {
+      const dry = next.find((hour) => hour.chance < 30);
+      parts.push(dry ? `Should ease around ${formatHour(dry.time)}.` : "Likely to continue for the next 12 hours.");
+    } else {
+      const rain = next.find((hour) => hour.chance >= 60);
+      const highest = Math.max(...next.map((hour) => hour.chance));
+
+      if (rain) {
+        parts.push(`Rain likely from ${formatHour(rain.time)} (${rain.chance}%).`);
+      } else if (highest < 20) {
+        parts.push("Dry for the next 12 hours.");
+      } else {
+        parts.push(`Low chance of rain in the next 12 hours, up to ${highest}%.`);
+      }
+    }
+  }
+
+  return parts.join(" ");
 }
 
 // update date and time for the selected city
@@ -794,143 +1225,753 @@ function updateClock() {
 
   const timezone = weatherData.timezone;
   currentDate.textContent = getLocalDate(timezone);
-  currentTime.textContent = `Local time: ${getLocalTime(timezone)}`;
+  currentTime.textContent = `${getLocalTime(timezone)} local time`;
 }
 
-// show weather details
+// say whether the data is live or saved, and how old it is
+function renderFreshness() {
+  if (!weatherData) return;
+
+  const age = formatAge(Date.now() - lastLoaded);
+  const stale = Date.now() - lastLoaded > 30 * 60 * 1000;
+  const saved = dataSource === "saved" || refreshFailed || stale;
+
+  freshness.classList.toggle("is-saved", saved);
+
+  if (dataSource === "saved") {
+    freshness.innerHTML = `Saved data · ${age} <button class="retry-btn" type="button" data-action="retry"><svg aria-hidden="true"><use href="#i-retry"/></svg>Retry</button>`;
+  } else if (refreshFailed || stale) {
+    freshness.innerHTML = `Updated ${age} · couldn't refresh <button class="retry-btn" type="button" data-action="retry"><svg aria-hidden="true"><use href="#i-retry"/></svg>Retry</button>`;
+  } else {
+    freshness.textContent = `Live · updated ${age}`;
+  }
+}
+
+// short notes worked out from the forecast. these are not official warnings
+function renderNotices() {
+  const current = weatherData.current;
+  const hourly = weatherData.hourly;
+  const daily = weatherData.daily;
+  const start = getCurrentHourIndex();
+  const notes = [];
+  const nowInfo = getWeatherInfo(current.weather_code, true);
+
+  // thunderstorms in the next 12 hours
+  if (nowInfo.type !== "storm") {
+    for (let i = start + 1; i <= start + 12 && i < hourly.time.length; i++) {
+      if (hourly.weather_code[i] >= 95) {
+        notes.push({ strong: true, text: `Thunderstorms possible around ${formatHour(hourly.time[i])}` });
+        break;
+      }
+    }
+  }
+
+  // heavy rain, 7.6 mm or more in an hour
+  for (let i = start; i <= start + 12 && i < hourly.time.length; i++) {
+    if ((hourly.precipitation[i] ?? 0) >= 7.6) {
+      const when = i === start ? "this hour" : `around ${formatHour(hourly.time[i])}`;
+      notes.push({ strong: true, text: `Heavy rain possible ${when}, ${formatRain(hourly.precipitation[i])} in an hour` });
+      break;
+    }
+  }
+
+  // strong gusts right now
+  if ((current.wind_gusts_10m ?? 0) >= 50) {
+    notes.push({ strong: true, text: `Strong gusts up to ${formatWind(current.wind_gusts_10m)}` });
+  }
+
+  // high uv while the sun is up
+  if (current.is_day === 1 && (daily.uv_index_max[0] ?? 0) >= 8) {
+    notes.push({ strong: false, text: `${getUvLevel(daily.uv_index_max[0])} UV today, peaking at ${Math.round(daily.uv_index_max[0])}` });
+  }
+
+  // unhealthy air
+  if (airData && airData.us_aqi > 150) {
+    notes.push({ strong: true, text: `Unhealthy air, AQI ${Math.round(airData.us_aqi)}` });
+  }
+
+  noticesList.innerHTML = notes.slice(0, 3).map((note) => `
+    <li class="notice${note.strong ? " is-strong" : ""}">
+      <svg aria-hidden="true"><use href="#i-alert"/></svg>
+      <span>${escapeHtml(note.text)} <small>· from the forecast</small></span>
+    </li>
+  `).join("");
+}
+
+// the horizon: a line across the bottom of the sky for the whole local day,
+// with the sun's path from sunrise to sunset and where it is now
+function renderHorizon() {
+  const daily = weatherData.daily;
+  const width = horizon.clientWidth || currentCard.clientWidth;
+  const height = horizon.clientHeight || 128;
+
+  if (!daily.sunrise[0] || !daily.sunset[0] || width === 0) {
+    horizon.innerHTML = "";
+    horizonText.textContent = "";
+    return;
+  }
+
+  const dayStart = localToMs(`${daily.time[0]}T00:00`);
+  const dayLength = 24 * 60 * 60 * 1000;
+  const rise = localToMs(daily.sunrise[0]);
+  const set = localToMs(daily.sunset[0]);
+  const now = cityNowMs();
+  const pad = Math.max(16, (width - Math.min(width, 1280)) / 2 + 16);
+  const usable = width - pad * 2;
+  const base = height - 34;
+  const peak = Math.min(84, height - 44);
+  const xAt = (ms) => pad + ((ms - dayStart) / dayLength) * usable;
+  const x1 = xAt(rise);
+  const x2 = xAt(set);
+
+  // the sun's path as a smooth arch
+  const points = [];
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48;
+    points.push([x1 + (x2 - x1) * t, base - Math.sin(Math.PI * t) * peak]);
+  }
+
+  const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${point[0].toFixed(1)} ${point[1].toFixed(1)}`).join(" ");
+  const progress = (now - rise) / (set - rise);
+  const nowX = Math.min(Math.max(xAt(now), pad), width - pad);
+  let marker = "";
+  let done = "";
+  let spoken;
+
+  if (progress >= 0 && progress <= 1) {
+    const sunX = x1 + (x2 - x1) * progress;
+    const sunY = base - Math.sin(Math.PI * progress) * peak;
+    const donePoints = points.filter((point) => point[0] <= sunX);
+    donePoints.push([sunX, sunY]);
+    done = `<path class="h-path-done" d="${donePoints.map((point, index) => `${index === 0 ? "M" : "L"}${point[0].toFixed(1)} ${point[1].toFixed(1)}`).join(" ")}"/>`;
+    marker = `<circle class="h-sun-halo" cx="${sunX}" cy="${sunY}" r="14"/><circle class="h-sun" cx="${sunX}" cy="${sunY}" r="6"/>`;
+    const hoursLeft = Math.max(0, (set - now) / 3600000);
+    spoken = `The sun is up. About ${Math.round(hoursLeft)} hours of daylight left.`;
+  } else {
+    marker = `<circle class="h-moon" cx="${nowX}" cy="${base + 12}" r="4"/>`;
+    spoken = now < rise ? "The sun has not risen yet." : "The sun has set.";
+  }
+
+  const riseText = formatClock(daily.sunrise[0]);
+  const setText = formatClock(daily.sunset[0]);
+  const narrow = width < 520;
+
+  horizon.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+      <rect class="h-land" x="0" y="${base}" width="${width}" height="${height - base}"/>
+      <line class="h-line" x1="0" y1="${base}" x2="${width}" y2="${base}"/>
+      <path class="h-path" d="${path}"/>
+      ${done}
+      <line class="h-line" x1="${nowX}" y1="${base - 6}" x2="${nowX}" y2="${base + 6}"/>
+      ${marker}
+      <text x="${x1}" y="${base + 20}" text-anchor="middle"><tspan class="h-time">${riseText}</tspan>${narrow ? "" : " sunrise"}</text>
+      <text x="${x2}" y="${base + 20}" text-anchor="middle"><tspan class="h-time">${setText}</tspan>${narrow ? "" : " sunset"}</text>
+    </svg>
+  `;
+
+  horizonText.textContent = `Sunrise ${riseText}, sunset ${setText}. ${spoken}`;
+}
+
+// show the instrument readings
 function renderDetails() {
   const current = weatherData.current;
   const daily = weatherData.daily;
   const hourly = weatherData.hourly;
+  const index = getCurrentHourIndex();
 
-  const visibility = hourly.visibility[getCurrentHourIndex()];
+  const visibility = current.visibility ?? hourly.visibility[index];
+  const uvNow = current.uv_index;
+  const uvMax = daily.uv_index_max[0];
+  const rainSum = daily.precipitation_sum ? daily.precipitation_sum[0] : null;
   const rainChance = daily.precipitation_probability_max[0];
-  const uv = daily.uv_index_max[0];
+
+  // pressure trend over the last three hours
+  let trend = "";
+  const earlier = hourly.pressure_msl ? hourly.pressure_msl[index - 3] : null;
+
+  if (current.pressure_msl != null && earlier != null) {
+    const change = current.pressure_msl - earlier;
+
+    if (change >= 1) {
+      trend = `<span class="trend"><svg aria-hidden="true"><use href="#i-arrow"/></svg>Rising ${change.toFixed(1)} in 3 h</span>`;
+    } else if (change <= -1) {
+      trend = `<span class="trend"><svg aria-hidden="true" style="transform: rotate(180deg)"><use href="#i-arrow"/></svg>Falling ${(-change).toFixed(1)} in 3 h</span>`;
+    } else {
+      trend = "Steady over 3 h";
+    }
+  }
+
+  const windFrom = current.wind_direction_10m;
+  const windNote = [
+    windFrom != null ? `From ${getWindDirection(windFrom)}` : "",
+    current.wind_gusts_10m != null ? `gusts ${formatWind(current.wind_gusts_10m)}` : ""
+  ].filter(Boolean).join(", ");
 
   const items = [
     {
-      icon: "fa-solid fa-droplet",
       label: "Humidity",
-      value: current.relative_humidity_2m != null ? `${current.relative_humidity_2m}%` : null,
-      note: ""
+      value: current.relative_humidity_2m != null ? `${current.relative_humidity_2m} %` : null,
+      visual: `<span class="meter"><i style="--pos: ${current.relative_humidity_2m}%; --meter: var(--rain)"></i></span>`,
+      note: current.dew_point_2m != null ? `Dew point ${formatDeg(current.dew_point_2m)}` : ""
     },
     {
-      icon: "fa-solid fa-wind",
       label: "Wind",
       value: current.wind_speed_10m != null ? formatWind(current.wind_speed_10m) : null,
-      note: current.wind_direction_10m != null ? `From ${getWindDirection(current.wind_direction_10m)}` : ""
+      // the arrow points where the wind is blowing to
+      visual: windFrom != null ? `<span class="needle" role="img" aria-label="wind from the ${getWindDirection(windFrom)}"><svg aria-hidden="true" style="--deg: ${windFrom + 180}deg"><use href="#i-arrow"/></svg></span>` : "",
+      note: windNote
     },
     {
-      icon: "fa-solid fa-eye",
-      label: "Visibility",
-      value: visibility != null ? formatDistance(visibility) : null,
-      note: ""
-    },
-    {
-      icon: "fa-solid fa-gauge-high",
       label: "Pressure",
       value: current.pressure_msl != null ? `${Math.round(current.pressure_msl)} hPa` : null,
-      note: ""
+      visual: "",
+      note: trend
     },
     {
-      icon: "fa-solid fa-umbrella",
-      label: "Precipitation",
-      value: rainChance != null ? `${rainChance}%` : null,
-      note: "Chance today"
+      label: "Visibility",
+      value: visibility != null ? formatDistance(visibility) : null,
+      visual: visibility != null ? `<span class="meter"><i style="--pos: ${Math.min(visibility / 200, 100)}%"></i></span>` : "",
+      note: visibility != null ? getVisibilityLevel(visibility) : ""
     },
     {
-      icon: "fa-solid fa-sun",
       label: "UV index",
-      value: uv != null ? `${Math.round(uv)}` : null,
-      note: uv != null ? getUvLevel(uv) : ""
+      value: uvNow != null ? `${Math.round(uvNow)} ` : null,
+      visual: uvNow != null ? `<span class="uv-scale"><i style="--pos: ${Math.min(uvNow / 12, 1) * 100}%"></i></span>` : "",
+      note: uvNow != null ? `${getUvLevel(uvNow)} now${uvMax != null ? `, peak ${Math.round(uvMax)} today` : ""}` : ""
     },
     {
-      icon: "fa-regular fa-sun",
-      label: "Sunrise",
-      value: daily.sunrise[0] ? formatClock(daily.sunrise[0]) : null,
-      note: ""
-    },
-    {
-      icon: "fa-regular fa-moon",
-      label: "Sunset",
-      value: daily.sunset[0] ? formatClock(daily.sunset[0]) : null,
-      note: ""
+      label: "Rain today",
+      value: rainSum != null ? formatRain(rainSum) : null,
+      visual: rainChance != null ? `<span class="meter"><i style="--pos: ${rainChance}%; --meter: var(--rain)"></i></span>` : "",
+      note: rainChance != null ? `Chance up to ${rainChance}% today` : ""
     }
   ];
 
-  // remove cards that have no data
+  // remove readings that have no data
   const availableItems = items.filter((item) => item.value !== null);
 
-  detailsGrid.innerHTML = availableItems.map((item) => `
-    <div class="detail-card">
-      <span class="detail-label"><i class="${item.icon}" aria-hidden="true"></i> ${item.label}</span>
-      <span class="detail-value">${item.value}</span>
-      <span class="detail-note">${item.note}</span>
-    </div>
-  `).join("");
+  detailsGrid.innerHTML = availableItems.map((item) => {
+    const parts = splitUnit(item.value);
+
+    return `
+      <div class="reading-cell">
+        <span class="reading-label">${item.label}</span>
+        <span class="reading-value">${parts.value}<small>${parts.unit}</small></span>
+        <span class="reading-visual">${item.visual}</span>
+        <span class="reading-note">${item.note}</span>
+      </div>
+    `;
+  }).join("");
+
+  observedNote.textContent = `Model data for ${formatClock(current.time)} local time`;
 }
 
-// show hourly forecast
+// show the next 24 hours as a temperature curve with rain and wind under it
 function renderHourlyForecast() {
   const hourly = weatherData.hourly;
   const start = getCurrentHourIndex();
   const hours = hourly.time.slice(start, start + 24);
 
-  hourlyList.innerHTML = hours.map((time, position) => {
+  if (hours.length === 0) {
+    hourlyList.innerHTML = '<p class="empty-text">Hourly forecast is not available.</p>';
+    return;
+  }
+
+  const temps = hours.map((time, position) => hourly.temperature_2m[start + position]);
+  const low = Math.min(...temps);
+  const high = Math.max(...temps);
+  const range = high - low || 1;
+
+  // columns fill the width on large screens and scroll on small ones
+  const column = Math.max(52, Math.floor((hourlyList.clientWidth || 1000) / hours.length));
+  const zoneTop = 52;
+  const zoneHeight = 128;
+  const yFor = (temp) => 36 + (1 - (temp - low) / range) * 78;
+
+  const items = hours.map((time, position) => {
     const index = start + position;
     const isDay = hourly.is_day[index] === 1;
     const info = getWeatherInfo(hourly.weather_code[index], isDay);
     const label = position === 0 ? "Now" : formatHour(time);
     const chance = hourly.precipitation_probability[index];
-    const chanceText = chance != null ? `${chance}%` : "--";
+    const wind = hourly.wind_speed_10m ? hourly.wind_speed_10m[index] : null;
+    const windDir = hourly.wind_direction_10m ? hourly.wind_direction_10m[index] : null;
+    const windText = wind != null ? splitUnit(formatWind(wind)).value : "";
+
+    const spoken = [
+      label,
+      info.name,
+      formatTemp(temps[position]),
+      chance != null ? `${chance}% chance of rain` : "",
+      wind != null ? `wind ${formatWind(wind)}${windDir != null ? ` from ${getWindDirection(windDir)}` : ""}` : ""
+    ].filter(Boolean).join(", ");
 
     return `
-      <div class="hourly-item${position === 0 ? " now" : ""}">
-        <span class="hourly-time">${label}</span>
-        <i class="fa-solid ${info.icon} ${getIconClass(info.type, isDay)}" aria-hidden="true"></i>
-        <span class="visually-hidden">${info.name}</span>
-        <span class="hourly-temp">${formatTemp(hourly.temperature_2m[index])}</span>
-        <span class="rain-chance"><i class="fa-solid fa-droplet" aria-hidden="true"></i> ${chanceText}</span>
-      </div>
+      <li class="hour${position === 0 ? " is-now" : ""}" data-position="${position}">
+        <span class="visually-hidden">${spoken}</span>
+        <span class="hour-time" aria-hidden="true">${label}</span>
+        ${glyph(info.glyph, "hour-glyph")}
+        <span class="hour-temp-zone" aria-hidden="true" style="--y: ${yFor(temps[position]).toFixed(1)}px">
+          <span class="hour-temp">${formatDeg(temps[position])}</span>
+          <span class="hour-dot"></span>
+        </span>
+        <span class="hour-rain" aria-hidden="true" style="--p: ${chance ?? 0}">
+          <span>${chance != null ? `${chance}%` : "–"}</span>
+          <i></i>
+        </span>
+        <span class="hour-wind" aria-hidden="true">
+          ${windDir != null ? `<svg style="--deg: ${windDir + 180}deg"><use href="#i-arrow"/></svg>` : ""}${windText}
+        </span>
+      </li>
     `;
+  });
+
+  // the curve through every hour, drawn with smooth bezier segments
+  const points = temps.map((temp, position) => [column * (position + 0.5), zoneTop + yFor(temp)]);
+  let line = `M${points[0][0]} ${points[0][1].toFixed(1)}`;
+
+  for (let i = 1; i < points.length; i++) {
+    const [x0, y0] = points[i - 1];
+    const [x1, y1] = points[i];
+    const mid = (x0 + x1) / 2;
+    line += ` C${mid} ${y0.toFixed(1)} ${mid} ${y1.toFixed(1)} ${x1} ${y1.toFixed(1)}`;
+  }
+
+  const last = points[points.length - 1];
+  const area = `${line} L${last[0]} ${zoneTop + zoneHeight} L${points[0][0]} ${zoneTop + zoneHeight} Z`;
+  const totalWidth = column * hours.length;
+  const totalHeight = 22 + 30 + zoneHeight + 52 + 26;
+
+  // mark where a new day starts
+  const dayLines = hours.map((time, position) => {
+    if (position === 0 || !time.endsWith("T00:00")) return "";
+    const x = column * position;
+    return `<line class="c-day" x1="${x}" y1="0" x2="${x}" y2="${totalHeight}"/><text class="c-day-label" x="${x + 6}" y="${zoneTop + 12}">${formatDayName(time.slice(0, 10))}</text>`;
   }).join("");
+
+  hourlyList.innerHTML = `
+    <ol class="hourly-track" style="--col: ${column}px">
+      <svg class="hourly-curve" width="${totalWidth}" height="${totalHeight}" aria-hidden="true">
+        ${dayLines}
+        <path class="c-area" d="${area}"/>
+        <path class="c-line" d="${line}"/>
+      </svg>
+      ${items.join("")}
+    </ol>
+  `;
+
+  setActiveHour(Math.min(activeHour, hours.length - 1), false);
+  updateHourlyFade();
 }
 
-// show 7-day forecast
+// fade the edges of the hourly chart while there is more to scroll
+function updateHourlyFade() {
+  const more = hourlyList.scrollWidth - hourlyList.clientWidth;
+  hourlyList.classList.toggle("fade-right", more > 4 && hourlyList.scrollLeft < more - 4);
+  hourlyList.classList.toggle("fade-left", hourlyList.scrollLeft > 4);
+}
+
+// highlight one hour and describe it in the readout
+function setActiveHour(position, scroll) {
+  const items = hourlyList.querySelectorAll(".hour");
+
+  if (items.length === 0) return;
+
+  activeHour = Math.max(0, Math.min(position, items.length - 1));
+  items.forEach((item, index) => item.classList.toggle("is-active", index === activeHour && activeHour !== 0));
+
+  const hourly = weatherData.hourly;
+  const index = getCurrentHourIndex() + activeHour;
+  const info = getWeatherInfo(hourly.weather_code[index], hourly.is_day[index] === 1);
+  const chance = hourly.precipitation_probability[index];
+  const amount = hourly.precipitation[index];
+  const wind = hourly.wind_speed_10m ? hourly.wind_speed_10m[index] : null;
+  const windDir = hourly.wind_direction_10m ? hourly.wind_direction_10m[index] : null;
+  const label = activeHour === 0 ? "This hour" : formatHour(hourly.time[index]);
+
+  const parts = [
+    `<strong>${label}</strong>`,
+    escapeHtml(info.name),
+    `<strong>${formatDeg(hourly.temperature_2m[index])}</strong>`,
+    chance != null ? `rain ${chance}%${amount ? `, ${formatRain(amount)}` : ""}` : "",
+    wind != null ? `wind ${formatWind(wind)}${windDir != null ? ` ${getWindDirection(windDir)}` : ""}` : ""
+  ].filter(Boolean);
+
+  hourlyReadout.innerHTML = parts.join(" · ");
+
+  if (scroll) {
+    items[activeHour].scrollIntoView({ block: "nearest", inline: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth" });
+  }
+}
+
+// keyboard and pointer support for the hourly chart
+function handleHourlyKeys(event) {
+  const keys = { ArrowRight: 1, ArrowLeft: -1, Home: -100, End: 100 };
+
+  if (!(event.key in keys)) return;
+
+  event.preventDefault();
+  setActiveHour(activeHour + keys[event.key], true);
+}
+
+function handleHourlyPointer(event) {
+  const item = event.target.closest(".hour");
+
+  if (item) {
+    setActiveHour(Number(item.dataset.position), false);
+  }
+}
+
+// show the seven days as temperature ranges on one shared scale
 function renderDailyForecast() {
   const daily = weatherData.daily;
+  const lows = daily.temperature_2m_min;
+  const highs = daily.temperature_2m_max;
+  const weekLow = Math.min(...lows);
+  const weekHigh = Math.max(...highs);
+  const range = weekHigh - weekLow || 1;
 
   dailyList.innerHTML = daily.time.map((date, index) => {
     const info = getWeatherInfo(daily.weather_code[index], true);
     const dayName = index === 0 ? "Today" : formatDayName(date);
     const chance = daily.precipitation_probability_max[index];
-    const chanceText = chance != null ? `${chance}%` : "--";
+    const amount = daily.precipitation_sum ? daily.precipitation_sum[index] : null;
+    const lowN = (lows[index] - weekLow) / range;
+    const highN = (highs[index] - weekLow) / range;
+
+    // the column leaves room above and below for the labels
+    const lowPct = 14 + lowN * 72;
+    const highPct = 14 + highN * 72;
+    const colorLow = tempColor(lows[index]);
+    const colorHigh = tempColor(highs[index]);
+
+    const spoken = `${index === 0 ? "Today" : new Date(`${date}T00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}: ${info.name}, high ${formatTemp(highs[index])}, low ${formatTemp(lows[index])}${chance != null ? `, ${chance}% chance of rain` : ""}${amount ? `, ${formatRain(amount)}` : ""}`;
 
     return `
-      <li class="daily-item">
-        <div class="daily-day">
-          <span class="day-name">${dayName}</span>
-          <span class="day-date">${formatDayDate(date)}</span>
-        </div>
-        <i class="fa-solid ${info.icon} ${getIconClass(info.type, true)} daily-icon" aria-hidden="true"></i>
-        <span class="daily-condition">${info.name}</span>
-        <span class="rain-chance daily-rain"><i class="fa-solid fa-droplet" aria-hidden="true"></i> ${chanceText}</span>
-        <span class="daily-temps">
-          <span class="temp-high">${convertTemp(daily.temperature_2m_max[index])}°</span>
-          <span class="temp-low">/ ${convertTemp(daily.temperature_2m_min[index])}°</span>
+      <li class="day${index === 0 ? " is-today" : ""}" style="--lo: ${lowPct}%; --hi: ${highPct}%; --lo-n: ${lowN}; --hi-n: ${highN}; --bar: linear-gradient(to top, ${colorLow}, ${colorHigh}); --bar-x: linear-gradient(to right, ${colorLow}, ${colorHigh})">
+        <span class="visually-hidden">${spoken}</span>
+        <span class="day-name" aria-hidden="true">${dayName}</span>
+        <span class="day-date" aria-hidden="true">${formatDayDate(date)}</span>
+        ${glyph(info.glyph, "day-glyph")}
+        <span class="day-range" aria-hidden="true">
+          <span class="day-bar"></span>
+          <span class="day-hi">${formatDeg(highs[index])}</span>
+          <span class="day-lo">${formatDeg(lows[index])}</span>
         </span>
+        <span class="day-rain" aria-hidden="true">
+          <strong>${chance != null ? `${chance}%` : "–"}</strong>
+          ${amount ? formatRain(amount) : "dry"}
+        </span>
+        <span class="day-condition" aria-hidden="true">${info.name}</span>
       </li>
     `;
   }).join("");
+
+  dailyNote.textContent = `Week range ${formatDeg(weekLow)} to ${formatDeg(weekHigh)} · rain chance and amount`;
 }
 
-//  temperature unit 
+// us aqi categories
+function getAqiLevel(aqi) {
+  if (aqi <= 50) return { name: "Good", note: "Air quality is satisfactory." };
+  if (aqi <= 100) return { name: "Moderate", note: "Unusually sensitive people may want to limit long outdoor effort." };
+  if (aqi <= 150) return { name: "Unhealthy for sensitive groups", note: "Sensitive groups should reduce long outdoor effort." };
+  if (aqi <= 200) return { name: "Unhealthy", note: "Everyone should reduce long outdoor effort." };
+  if (aqi <= 300) return { name: "Very unhealthy", note: "Avoid long outdoor effort." };
+  return { name: "Hazardous", note: "Avoid outdoor activity." };
+}
+
+// where an aqi value sits on the scale bar
+function getAqiPosition(aqi) {
+  if (aqi <= 200) return (aqi / 200) * 66.6;
+  if (aqi <= 300) return 66.6 + ((aqi - 200) / 100) * 16.7;
+  return 83.3 + Math.min((aqi - 300) / 200, 1) * 16.7;
+}
+
+// pollen level in grains per cubic metre, rough bands
+function getPollenLevel(value) {
+  if (value < 1) return "None";
+  if (value < 20) return "Low";
+  if (value < 80) return "Moderate";
+  if (value < 200) return "High";
+  return "Very high";
+}
+
+// show air quality and pollen
+function renderAir() {
+  if (!airData || airData.us_aqi == null) {
+    airNote.textContent = "";
+    airPanel.innerHTML = '<p class="empty-text">Air quality data is not available for this place right now.</p>';
+    return;
+  }
+
+  const aqi = Math.round(airData.us_aqi);
+  const level = getAqiLevel(aqi);
+  const rows = [
+    ["PM2.5", airData.pm2_5],
+    ["PM10", airData.pm10],
+    ["Ozone", airData.ozone],
+    ["Nitrogen dioxide", airData.nitrogen_dioxide]
+  ].filter((row) => row[1] != null);
+
+  const pollen = [
+    ["Grass pollen", airData.grass_pollen],
+    ["Birch pollen", airData.birch_pollen],
+    ["Alder pollen", airData.alder_pollen],
+    ["Ragweed pollen", airData.ragweed_pollen]
+  ].filter((row) => row[1] != null);
+
+  airNote.textContent = `US AQI · ${formatClock(airData.time)} local`;
+
+  airPanel.innerHTML = `
+    <div class="air-top">
+      <span class="air-index">${aqi}</span>
+      <span class="air-level">${level.name}<small>${level.note}</small></span>
+    </div>
+    <div class="aqi-scale" role="img" aria-label="air quality index ${aqi}, ${level.name}"><i style="--pos: ${getAqiPosition(aqi)}%"></i></div>
+    <dl class="data-rows">
+      ${rows.map((row) => `<div class="data-row"><dt>${row[0]}</dt><dd>${Math.round(row[1])} <small>µg/m³</small></dd></div>`).join("")}
+      ${pollen.map((row) => `<div class="data-row"><dt>${row[0]}</dt><dd>${getPollenLevel(row[1])} <small>${Math.round(row[1])} grains/m³</small></dd></div>`).join("")}
+    </dl>
+    <p class="source-note">${pollen.length === 0 ? "Pollen counts are only available for Europe. " : ""}Modelled by CAMS through Open-Meteo, not a local sensor.</p>
+  `;
+}
+
+// show sunrise, sunset and day length
+function renderDaylight() {
+  const daily = weatherData.daily;
+
+  if (!daily.sunrise[0] || !daily.sunset[0]) {
+    daylightPanel.innerHTML = '<p class="empty-text">Sunrise and sunset times are not available.</p>';
+    return;
+  }
+
+  const rise = localToMs(daily.sunrise[0]);
+  const set = localToMs(daily.sunset[0]);
+  const now = cityNowMs();
+  const progress = Math.min(Math.max((now - rise) / (set - rise), 0), 1);
+  const length = daily.daylight_duration ? daily.daylight_duration[0] : (set - rise) / 1000;
+  const tomorrow = daily.daylight_duration ? daily.daylight_duration[1] : null;
+
+  let change = "";
+  if (tomorrow != null) {
+    const minutes = Math.round((tomorrow - length) / 60);
+    change = minutes === 0 ? "About the same tomorrow" : `${Math.abs(minutes)} min ${minutes > 0 ? "longer" : "shorter"} tomorrow`;
+  }
+
+  // the whole local day as a band: night, daylight, night, with a marker for now
+  const dayStart = localToMs(`${daily.time[0]}T00:00`);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const risePct = Math.min(Math.max(((rise - dayStart) / dayMs) * 100, 0), 100);
+  const setPct = Math.min(Math.max(((set - dayStart) / dayMs) * 100, 0), 100);
+  const nowPct = Math.min(Math.max(((now - dayStart) / dayMs) * 100, 0), 100);
+  const share = Math.round((length / 86400) * 100);
+  const isUp = progress > 0 && progress < 1;
+
+  daylightPanel.innerHTML = `
+    <div class="light-band" role="img" aria-label="daylight is ${share}% of today, from ${formatClock(daily.sunrise[0])} to ${formatClock(daily.sunset[0])}" style="--rise: ${risePct}%; --set: ${setPct}%; --now: ${nowPct}%">
+      <span class="light-day"></span>
+      <span class="light-now${isUp ? " is-up" : ""}"></span>
+    </div>
+    <div class="light-scale" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    <p class="light-share"><strong>${share}%</strong> of today is daylight</p>
+    <dl class="data-rows">
+      <div class="data-row"><dt>Sunrise</dt><dd>${formatClock(daily.sunrise[0])}</dd></div>
+      <div class="data-row"><dt>Sunset</dt><dd>${formatClock(daily.sunset[0])}</dd></div>
+      <div class="data-row"><dt>Daylight</dt><dd>${formatDuration(length)}${change ? ` <small>· ${change}</small>` : ""}</dd></div>
+      ${daily.sunrise[1] ? `<div class="data-row"><dt>Sunrise tomorrow</dt><dd>${formatClock(daily.sunrise[1])}</dd></div>` : ""}
+    </dl>
+  `;
+}
+
+//  sky motion
+// a light canvas layer for rain and snow. it runs at about 30 frames a second,
+// pauses when the sky is off screen or the tab is hidden, and never runs with reduced motion
+
+const skyMotion = (() => {
+  const canvas = document.getElementById("sky-canvas");
+  const flash = currentCard.querySelector(".sky-flash");
+  const context = canvas.getContext("2d");
+  let kind = null;
+  let level = 0;
+  let particles = [];
+  let frame = null;
+  let lastTime = 0;
+  let onScreen = true;
+  let flashTimer = null;
+  let width = 0;
+  let height = 0;
+
+  function resize() {
+    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
+    width = canvas.clientWidth;
+    height = canvas.clientHeight;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    seed();
+  }
+
+  function seed() {
+    const density = { 1: 0.05, 2: 0.1, 3: 0.17 }[level] || 0.08;
+    const count = kind ? Math.round((width / 10) * density * 10) : 0;
+    particles = Array.from({ length: Math.min(count, 260) }, () => makeParticle(true));
+  }
+
+  function makeParticle(anywhere) {
+    const isSnow = kind === "snow";
+
+    return {
+      x: Math.random() * (width + 100) - 50,
+      y: anywhere ? Math.random() * height : -20,
+      speed: isSnow ? 20 + Math.random() * 30 : 520 + Math.random() * 380 + level * 120,
+      length: isSnow ? 1 + Math.random() * 2 : 10 + Math.random() * 14,
+      sway: Math.random() * Math.PI * 2,
+      alpha: isSnow ? 0.45 + Math.random() * 0.45 : 0.14 + Math.random() * 0.22
+    };
+  }
+
+  function draw(time) {
+    frame = requestAnimationFrame(draw);
+
+    // about 30 frames a second is plenty for rain
+    if (time - lastTime < 32) return;
+
+    const seconds = Math.min((time - lastTime) / 1000, 0.1);
+    lastTime = time;
+    context.clearRect(0, 0, width, height);
+
+    const ink = getComputedStyle(currentCard).getPropertyValue("--particle").trim() || "#ffffff";
+    context.strokeStyle = ink;
+    context.fillStyle = ink;
+    context.lineCap = "round";
+
+    for (const particle of particles) {
+      particle.y += particle.speed * seconds;
+
+      if (kind === "snow") {
+        particle.sway += seconds;
+        particle.x += Math.sin(particle.sway) * 12 * seconds;
+        context.globalAlpha = particle.alpha;
+        context.beginPath();
+        context.arc(particle.x, particle.y, particle.length, 0, Math.PI * 2);
+        context.fill();
+      } else {
+        particle.x -= particle.speed * 0.12 * seconds;
+        context.globalAlpha = particle.alpha;
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(particle.x, particle.y);
+        context.lineTo(particle.x + particle.length * 0.12, particle.y - particle.length);
+        context.stroke();
+      }
+
+      if (particle.y - particle.length > height) {
+        Object.assign(particle, makeParticle(false));
+      }
+    }
+
+    context.globalAlpha = 1;
+  }
+
+  function scheduleFlash() {
+    clearTimeout(flashTimer);
+
+    if (kind !== "storm" || reducedMotion.matches) return;
+
+    flashTimer = setTimeout(() => {
+      if (onScreen && !document.hidden) {
+        flash.style.setProperty("--flash-x", `${20 + Math.random() * 60}%`);
+        flash.classList.remove("is-on");
+        void flash.offsetWidth;
+        flash.classList.add("is-on");
+      }
+
+      scheduleFlash();
+    }, 9000 + Math.random() * 9000);
+  }
+
+  function shouldRun() {
+    return kind && !reducedMotion.matches && onScreen && !document.hidden;
+  }
+
+  function update() {
+    if (shouldRun() && frame === null) {
+      lastTime = performance.now();
+      frame = requestAnimationFrame(draw);
+    } else if (!shouldRun() && frame !== null) {
+      cancelAnimationFrame(frame);
+      frame = null;
+    }
+
+    if (!kind || reducedMotion.matches) {
+      context.clearRect(0, 0, width, height);
+    }
+  }
+
+  // rain, drizzle and storms get rain. snow gets snow. everything else stays still
+  function set(type, newLevel) {
+    const newKind = type === "rain" || type === "storm" ? (type === "storm" ? "storm" : "rain") : type === "snow" ? "snow" : null;
+    const changed = newKind !== kind || newLevel !== level;
+    kind = newKind;
+    level = type === "storm" ? 3 : newLevel;
+
+    if (changed) {
+      if (width === 0) resize();
+      else seed();
+      scheduleFlash();
+    }
+
+    update();
+  }
+
+  new ResizeObserver(() => {
+    resize();
+  }).observe(canvas);
+
+  new IntersectionObserver((entries) => {
+    onScreen = entries[0].isIntersecting;
+    update();
+  }).observe(currentCard);
+
+  document.addEventListener("visibilitychange", update);
+  reducedMotion.addEventListener("change", update);
+
+  return { set };
+})();
+
+//  masthead
+
+// the masthead sits on the sky at the top, and turns solid once you scroll past it
+// in between, it takes the sky's own top color so text never runs under it
+function updateMasthead() {
+  const solid = window.scrollY > currentCard.offsetHeight - masthead.offsetHeight - 8;
+  masthead.classList.toggle("is-solid", solid);
+  masthead.classList.toggle("is-scrolled", !solid && window.scrollY > 4);
+
+  if (!solid) {
+    const styles = getComputedStyle(currentCard);
+    masthead.style.setProperty("--head-ink", styles.getPropertyValue("--sky-ink").trim() || "#ffffff");
+    masthead.style.setProperty("--head-bg", styles.getPropertyValue("--sky-a").trim() || "#2c3c45");
+  } else {
+    masthead.style.removeProperty("--head-ink");
+  }
+}
+
+// the sky slides under the masthead, so it needs to know how tall the masthead is
+function trackMastheadHeight() {
+  const setHeight = () => document.documentElement.style.setProperty("--masthead-h", `${masthead.offsetHeight}px`);
+  new ResizeObserver(setHeight).observe(masthead);
+  setHeight();
+}
+
+//  temperature unit
 
 // change between celsius and fahrenheit
 function changeUnit(newUnit) {
   unit = newUnit;
   saveValue(unitKey, unit);
   updateUnitButtons();
+  shownTemp = null;
 
   if (weatherData) {
     renderWeather();
@@ -946,7 +1987,7 @@ function updateUnitButtons() {
   unitFBtn.setAttribute("aria-pressed", unit === "F");
 }
 
-//  theme 
+//  theme
 
 function toggleTheme() {
   theme = theme === "dark" ? "light" : "dark";
@@ -958,15 +1999,15 @@ function applyTheme() {
   document.documentElement.setAttribute("data-theme", theme);
 
   if (theme === "dark") {
-    themeBtn.innerHTML = '<i class="fa-solid fa-sun" aria-hidden="true"></i>';
+    themeBtn.innerHTML = '<svg aria-hidden="true"><use href="#g-sun"/></svg>';
     themeBtn.setAttribute("aria-label", "switch to light mode");
   } else {
-    themeBtn.innerHTML = '<i class="fa-solid fa-moon" aria-hidden="true"></i>';
+    themeBtn.innerHTML = '<svg aria-hidden="true"><use href="#g-moon"/></svg>';
     themeBtn.setAttribute("aria-label", "switch to dark mode");
   }
 }
 
-//  favorites 
+//  favorites
 
 function isFavorite(city) {
   return favorites.some((item) => getCityId(item) === getCityId(city));
@@ -985,13 +2026,14 @@ function toggleFavorite() {
 
 function addFavorite(city) {
   if (favorites.length >= maxFavorites) {
-    showError(`You can save up to ${maxFavorites} favorite cities.`);
+    showError(`You can save up to ${maxFavorites} places.`);
     return;
   }
 
   favorites.push(city);
   saveFavorites();
   renderFavorites();
+  renderRecentSearches();
   updateFavoriteButton();
 }
 
@@ -999,10 +2041,11 @@ function removeFavorite(city) {
   favorites = favorites.filter((item) => getCityId(item) !== getCityId(city));
   saveFavorites();
   renderFavorites();
+  renderRecentSearches();
   updateFavoriteButton();
 }
 
-// update the heart button
+// update the save button
 function updateFavoriteButton() {
   if (!currentCity) return;
 
@@ -1010,48 +2053,54 @@ function updateFavoriteButton() {
 
   favoriteBtn.classList.toggle("saved", saved);
   favoriteBtn.setAttribute("aria-pressed", saved);
-
-  if (saved) {
-    favoriteBtn.innerHTML = '<i class="fa-solid fa-heart" aria-hidden="true"></i> Saved';
-  } else {
-    favoriteBtn.innerHTML = '<i class="fa-regular fa-heart" aria-hidden="true"></i> Add to favorites';
-  }
+  favoriteBtn.innerHTML = `<svg aria-hidden="true"><use href="#i-pin"/></svg>${saved ? "Saved" : "Save place"}`;
 }
 
-// show favorite cities
+// is this the place on screen
+function isCurrent(city) {
+  return currentCity !== null && getCityId(city) === getCityId(currentCity);
+}
+
+// show saved places
 function renderFavorites() {
   if (favorites.length === 0) {
-    favoritesList.innerHTML = '<li class="empty-text">No favorite cities yet. Search for a city and tap the heart.</li>';
+    favoritesList.innerHTML = '<li class="places-empty">Save a place to keep it here.</li>';
     return;
   }
 
   favoritesList.innerHTML = favorites.map((city, index) => {
-    const temp = favoriteTemps[getCityId(city)];
-    const tempText = temp !== undefined ? formatTemp(temp) : "--";
+    const saved = favoriteTemps[getCityId(city)];
+    const tempText = saved ? formatDeg(saved.temp) : "";
+    const info = saved && saved.code != null ? getWeatherInfo(saved.code, saved.isDay) : null;
     const name = escapeHtml(city.name);
+    const current = isCurrent(city);
 
     return `
-      <li class="city-item">
-        <button class="city-btn" type="button" data-action="load" data-index="${index}">
+      <li class="place-item${current ? " is-current" : ""}">
+        <button class="city-btn" type="button" data-action="load" data-index="${index}"${current ? ' aria-current="true"' : ""}>
+          ${info ? glyph(info.glyph, "", info.name) : ""}
           <span class="city-name">${name}</span>
-          <span class="city-country">${escapeHtml(city.country)}</span>
+          <span class="city-temp">${tempText}</span>
         </button>
-        <span class="city-temp">${tempText}</span>
-        <button class="city-remove" type="button" data-action="remove" data-index="${index}" aria-label="remove ${name} from favorites">
-          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        <button class="city-remove" type="button" data-action="remove" data-index="${index}" aria-label="remove ${name} from saved places">
+          <svg aria-hidden="true"><use href="#i-close"/></svg>
         </button>
       </li>
     `;
   }).join("");
 }
 
-// get the current temperature for every favorite city
+// get the current temperature for every saved place
 async function loadFavoriteTemps() {
   const requests = favorites.map(async (city) => {
     try {
-      const url = `${weatherUrl}?latitude=${city.latitude}&longitude=${city.longitude}&current=temperature_2m`;
+      const url = `${weatherUrl}?latitude=${city.latitude}&longitude=${city.longitude}&current=temperature_2m,weather_code,is_day`;
       const data = await fetchJson(url);
-      favoriteTemps[getCityId(city)] = data.current.temperature_2m;
+      favoriteTemps[getCityId(city)] = {
+        temp: data.current.temperature_2m,
+        code: data.current.weather_code,
+        isDay: data.current.is_day === 1
+      };
     } catch (error) {
       console.log("could not load temperature for", city.name);
     }
@@ -1061,7 +2110,7 @@ async function loadFavoriteTemps() {
   renderFavorites();
 }
 
-// handle clicks inside the favorites list
+// handle clicks inside the saved places list
 function handleFavoritesClick(event) {
   const button = event.target.closest("button");
 
@@ -1078,7 +2127,7 @@ function handleFavoritesClick(event) {
   }
 }
 
-//  recent searches 
+//  recent searches
 
 // add a city to recent searches
 function addRecentSearch(city) {
@@ -1093,21 +2142,25 @@ function addRecentSearch(city) {
   renderRecentSearches();
 }
 
-// show recent searches
+// show recent searches that are not already saved
 function renderRecentSearches() {
-  if (recentSearches.length === 0) {
-    recentList.innerHTML = '<li class="empty-text">Your recent searches will show up here.</li>';
-    return;
-  }
+  const items = recentSearches
+    .map((city, index) => ({ city, index }))
+    .filter((item) => !isFavorite(item.city));
 
-  recentList.innerHTML = recentSearches.map((city, index) => `
-    <li class="city-item">
-      <button class="city-btn" type="button" data-index="${index}">
-        <span class="city-name">${escapeHtml(city.name)}</span>
-        <span class="city-country">${escapeHtml(city.country)}</span>
-      </button>
-    </li>
-  `).join("");
+  recentList.innerHTML = items.map(({ city, index }) => {
+    const current = isCurrent(city);
+
+    return `
+      <li class="place-item${current ? " is-current" : ""}">
+        <button class="city-btn" type="button" data-index="${index}"${current ? ' aria-current="true"' : ""}>
+          <svg aria-hidden="true"><use href="#i-history"/></svg>
+          <span class="city-name">${escapeHtml(city.name)}</span>
+          <span class="city-country">${escapeHtml(city.country)}</span>
+        </button>
+      </li>
+    `;
+  }).join("");
 }
 
 // handle clicks inside the recent searches list
@@ -1123,17 +2176,29 @@ function handleRecentClick(event) {
   }
 }
 
-//  start the app 
+//  start the app
+
+// redraw the parts that depend on width, after resizing stops
+let resizeTimer;
+function handleResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!weatherData) return;
+    renderHorizon();
+    renderHourlyForecast();
+  }, 150);
+}
 
 // add event listeners
 function setupEventListeners() {
   searchForm.addEventListener("submit", searchCity);
   searchInput.addEventListener("input", handleSearchInput);
+  searchInput.addEventListener("focus", showRecentInSearch);
 
   searchInput.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       hideSuggestions();
-    } else if (event.key === "ArrowDown" && !suggestionsList.hidden) {
+    } else if (event.key === "ArrowDown" && !suggestionsPanel.hidden) {
       handleSuggestionKeys(event);
     }
   });
@@ -1148,6 +2213,13 @@ function setupEventListeners() {
     }
   });
 
+  // close suggestions when focus leaves the search form
+  searchForm.addEventListener("focusout", (event) => {
+    if (event.relatedTarget && !searchForm.contains(event.relatedTarget)) {
+      hideSuggestions();
+    }
+  });
+
   locationBtn.addEventListener("click", getCurrentLocation);
   unitCBtn.addEventListener("click", () => changeUnit("C"));
   unitFBtn.addEventListener("click", () => changeUnit("F"));
@@ -1156,12 +2228,36 @@ function setupEventListeners() {
   favoritesList.addEventListener("click", handleFavoritesClick);
   recentList.addEventListener("click", handleRecentClick);
 
+  freshness.addEventListener("click", (event) => {
+    if (event.target.closest('[data-action="retry"]') && currentCity) {
+      showCityWeather(currentCity, false);
+    }
+  });
+
+  hourlyList.addEventListener("keydown", handleHourlyKeys);
+  hourlyList.addEventListener("pointermove", handleHourlyPointer);
+  hourlyList.addEventListener("pointerdown", handleHourlyPointer);
+  hourlyList.addEventListener("pointerleave", () => setActiveHour(0, false));
+  hourlyList.addEventListener("scroll", updateHourlyFade, { passive: true });
+
+  window.addEventListener("scroll", updateMasthead, { passive: true });
+  window.addEventListener("resize", handleResize);
+
+  // get fresh weather when the connection comes back
+  window.addEventListener("online", refreshWeather);
+  window.addEventListener("offline", () => {
+    if (weatherData) {
+      showMessage("You're offline. The weather shown is the last data loaded.", "info");
+    }
+  });
+
   // when the user comes back to the tab, update the clock
   // and get fresh weather if the data is old
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
 
     updateClock();
+    renderFreshness();
 
     if (Date.now() - lastLoaded > refreshTime) {
       refreshWeather();
@@ -1176,18 +2272,30 @@ function init() {
   loadTheme();
   loadFavorites();
   loadRecentSearches();
+  trackMastheadHeight();
 
   renderFavorites();
   renderRecentSearches();
   setupEventListeners();
+  updateMasthead();
 
   // open the last searched city, or the default city
   const startCity = recentSearches.length > 0 ? recentSearches[0] : defaultCity;
   showCityWeather(startCity, false);
   loadFavoriteTemps();
 
-  // keep the clock and the weather updated
-  setInterval(updateClock, 30000);
+  // keep the clock, the sun and the weather updated
+  setInterval(() => {
+    updateClock();
+    renderFreshness();
+  }, 30000);
+
+  setInterval(() => {
+    if (weatherData && !document.hidden) {
+      renderHorizon();
+    }
+  }, 5 * 60 * 1000);
+
   setInterval(refreshWeather, refreshTime);
 }
 
