@@ -1,10 +1,29 @@
 // hazcast weather dashboard
 
+// pure helpers live in weather-core.js so they can be tested
+const core = window.HazCore;
+const {
+  getWeatherInfo, signed, splitUnit, escapeHtml, getCityId, getWindDirection, getUvLevel,
+  getVisibilityLevel, localToMs, formatAge, formatDuration, tempColor, roundCoord, isValidCity,
+  getAqiLevel, getAqiPosition, getPollenLevel, findHourIndex, getNowcast, moveItem,
+  placeToQuery, queryToPlace, isInUsCoverage
+} = core;
+
 // api addresses
 const geocodingUrl = "https://geocoding-api.open-meteo.com/v1/search";
 const weatherUrl = "https://api.open-meteo.com/v1/forecast";
 const airQualityUrl = "https://air-quality-api.open-meteo.com/v1/air-quality";
 const reverseGeocodeUrl = "https://api.bigdatacloud.net/data/reverse-geocode-client";
+const alertsUrl = "https://api.weather.gov/alerts/active";
+const radarListUrl = "https://api.rainviewer.com/public/weather-maps.json";
+
+// leaflet is only loaded when the radar is opened, pinned to one version with integrity hashes
+const leafletFiles = {
+  css: "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+  cssHash: "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=",
+  js: "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+  jsHash: "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+};
 
 // weather fields to request
 const currentFields = [
@@ -92,42 +111,6 @@ const defaultCity = {
   longitude: 101.6865
 };
 
-// weather codes from open-meteo
-// glyph names match the svg symbols in index.html, level is how heavy it is (1 to 3)
-const weatherCodes = {
-  0: { name: "Clear sky", day: "g-sun", night: "g-moon", type: "clear" },
-  1: { name: "Mainly clear", day: "g-sun", night: "g-moon", type: "clear" },
-  2: { name: "Partly cloudy", day: "g-cloud-sun", night: "g-cloud-moon", type: "clear", partial: true },
-  3: { name: "Overcast", day: "g-cloud", night: "g-cloud", type: "cloudy" },
-  45: { name: "Fog", day: "g-fog", night: "g-fog", type: "fog" },
-  48: { name: "Freezing fog", day: "g-fog", night: "g-fog", type: "fog" },
-  51: { name: "Light drizzle", day: "g-drizzle", night: "g-drizzle", type: "rain", level: 1 },
-  53: { name: "Drizzle", day: "g-drizzle", night: "g-drizzle", type: "rain", level: 1 },
-  55: { name: "Heavy drizzle", day: "g-drizzle", night: "g-drizzle", type: "rain", level: 2 },
-  56: { name: "Freezing drizzle", day: "g-sleet", night: "g-sleet", type: "rain", level: 1 },
-  57: { name: "Heavy freezing drizzle", day: "g-sleet", night: "g-sleet", type: "rain", level: 2 },
-  61: { name: "Light rain", day: "g-rain", night: "g-rain", type: "rain", level: 1 },
-  63: { name: "Rain", day: "g-rain", night: "g-rain", type: "rain", level: 2 },
-  65: { name: "Heavy rain", day: "g-heavy-rain", night: "g-heavy-rain", type: "rain", level: 3 },
-  66: { name: "Freezing rain", day: "g-sleet", night: "g-sleet", type: "rain", level: 2 },
-  67: { name: "Heavy freezing rain", day: "g-sleet", night: "g-sleet", type: "rain", level: 3 },
-  71: { name: "Light snow", day: "g-snow", night: "g-snow", type: "snow", level: 1 },
-  73: { name: "Snow", day: "g-snow", night: "g-snow", type: "snow", level: 2 },
-  75: { name: "Heavy snow", day: "g-snow", night: "g-snow", type: "snow", level: 3 },
-  77: { name: "Snow grains", day: "g-snow", night: "g-snow", type: "snow", level: 1 },
-  80: { name: "Light rain showers", day: "g-showers", night: "g-rain", type: "rain", level: 1 },
-  81: { name: "Rain showers", day: "g-showers", night: "g-rain", type: "rain", level: 2 },
-  82: { name: "Violent rain showers", day: "g-heavy-rain", night: "g-heavy-rain", type: "rain", level: 3 },
-  85: { name: "Light snow showers", day: "g-snow", night: "g-snow", type: "snow", level: 1 },
-  86: { name: "Heavy snow showers", day: "g-snow", night: "g-snow", type: "snow", level: 3 },
-  95: { name: "Thunderstorm", day: "g-storm", night: "g-storm", type: "storm", level: 2 },
-  96: { name: "Thunderstorm with hail", day: "g-storm", night: "g-storm", type: "storm", level: 3 },
-  99: { name: "Severe thunderstorm with hail", day: "g-storm", night: "g-storm", type: "storm", level: 3 }
-};
-
-// used when a weather code is not in the list
-const unknownWeather = { name: "Unknown", day: "g-cloud", night: "g-cloud", type: "cloudy" };
-
 // page elements
 const masthead = document.getElementById("masthead");
 const searchForm = document.getElementById("search-form");
@@ -158,13 +141,27 @@ const skySummary = document.getElementById("sky-summary");
 const feelsLike = document.getElementById("feels-like");
 const highLow = document.getElementById("high-low");
 const favoriteBtn = document.getElementById("favorite-btn");
+const shareBtn = document.getElementById("share-btn");
 const freshness = document.getElementById("freshness");
 const noticesList = document.getElementById("notices");
 const horizon = document.getElementById("horizon");
 const horizonText = document.getElementById("horizon-text");
 
+const alertsBody = document.getElementById("alerts-body");
+const radarMapBox = document.getElementById("radar-map");
+const radarStart = document.getElementById("radar-start");
+const radarBtn = document.getElementById("radar-btn");
+const radarControls = document.getElementById("radar-controls");
+const radarPlay = document.getElementById("radar-play");
+const radarRange = document.getElementById("radar-range");
+const radarTime = document.getElementById("radar-time");
 const observedNote = document.getElementById("observed");
 const detailsGrid = document.getElementById("details-grid");
+const nowcastBlock = document.getElementById("nowcast-block");
+const nowcastNote = document.getElementById("nowcast-note");
+const nowcastText = document.getElementById("nowcast-text");
+const nowcastBars = document.getElementById("nowcast-bars");
+const nowcastAxis = document.getElementById("nowcast-axis");
 const hourlyList = document.getElementById("hourly-list");
 const hourlyReadout = document.getElementById("hourly-readout");
 const dailyList = document.getElementById("daily-list");
@@ -174,6 +171,8 @@ const airNote = document.getElementById("air-note");
 const daylightPanel = document.getElementById("daylight-panel");
 const favoritesList = document.getElementById("favorites-list");
 const recentList = document.getElementById("recent-list");
+const placesHint = document.getElementById("places-hint");
+const placesStatus = document.getElementById("places-status");
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -195,6 +194,8 @@ let lastLoaded = 0;
 let refreshFailed = false;
 let activeHour = 0;
 let shownTemp = null;
+let dragIndex = -1;
+let alerts = { status: "idle", items: [] };
 
 //  api
 
@@ -268,6 +269,7 @@ async function getWeather(city) {
     + `&current=${currentFields.join(",")}`
     + `&hourly=${hourlyFields.join(",")}`
     + `&daily=${dailyFields.join(",")}`
+    + "&minutely_15=precipitation,precipitation_probability&forecast_minutely_15=12"
     + "&timezone=auto&forecast_days=7&past_hours=3";
 
   return await fetchJson(url);
@@ -313,19 +315,6 @@ function makeCity(result) {
 
 //  weather codes
 
-// turn a weather code into a name, glyph and type
-function getWeatherInfo(code, isDay) {
-  const info = weatherCodes[code] || unknownWeather;
-
-  return {
-    name: info.name,
-    glyph: isDay ? info.day : info.night,
-    type: info.type,
-    level: info.level || 0,
-    partial: Boolean(info.partial)
-  };
-}
-
 // svg markup for a glyph
 function glyph(name, className, label) {
   const a11y = label ? `role="img" aria-label="${escapeHtml(label)}"` : 'aria-hidden="true"';
@@ -336,16 +325,7 @@ function glyph(name, className, label) {
 
 // convert celsius to the selected unit
 function convertTemp(celsius) {
-  if (unit === "F") {
-    return Math.round((celsius * 9) / 5 + 32);
-  }
-
-  return Math.round(celsius);
-}
-
-// use a real minus sign for temperatures below zero
-function signed(number) {
-  return number < 0 ? `−${Math.abs(number)}` : `${number}`;
+  return core.convertTemp(celsius, unit);
 }
 
 // show a temperature with its unit
@@ -360,90 +340,22 @@ function formatDeg(celsius) {
 
 // show wind speed in km/h, or mph when using fahrenheit
 function formatWind(kmh) {
-  if (unit === "F") {
-    return `${Math.round(kmh * 0.621371)} mph`;
-  }
-
-  return `${Math.round(kmh)} km/h`;
-}
-
-// split a value and its unit so the unit can be styled smaller
-function splitUnit(text) {
-  const index = text.lastIndexOf(" ");
-  return { value: text.slice(0, index), unit: text.slice(index + 1) };
+  return core.formatWind(kmh, unit);
 }
 
 // show visibility in km, or miles when using fahrenheit
 function formatDistance(meters) {
-  if (unit === "F") {
-    return `${(meters / 1609.34).toFixed(1)} mi`;
-  }
-
-  return `${(meters / 1000).toFixed(1)} km`;
+  return core.formatDistance(meters, unit);
 }
 
 // show rain amounts in mm, or inches when using fahrenheit
 function formatRain(mm) {
-  if (unit === "F") {
-    return `${(mm / 25.4).toFixed(2)} in`;
-  }
-
-  return `${mm < 10 ? mm.toFixed(1) : Math.round(mm)} mm`;
-}
-
-// make text safe to put inside innerHTML
-// city names come from the api and local storage, so never trust them as html
-function escapeHtml(text) {
-  return String(text ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-// get a unique id for a city
-// the region is included so two cities with the same name in one country stay separate
-function getCityId(city) {
-  return `${city.name}-${city.region || ""}-${city.country}`.toLowerCase();
-}
-
-// get wind direction from degrees
-function getWindDirection(degrees) {
-  const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  return directions[Math.round(degrees / 45) % 8];
-}
-
-// get uv level text
-function getUvLevel(uv) {
-  const level = Math.round(uv);
-
-  if (level < 3) return "Low";
-  if (level < 6) return "Moderate";
-  if (level < 8) return "High";
-  if (level < 11) return "Very high";
-  return "Extreme";
-}
-
-// describe visibility in words
-function getVisibilityLevel(meters) {
-  if (meters < 1000) return "Very poor";
-  if (meters < 4000) return "Poor, misty";
-  if (meters < 10000) return "Moderate";
-  return "Good";
+  return core.formatRain(mm, unit);
 }
 
 // find the current hour in the hourly data
 function getCurrentHourIndex() {
-  const hourText = weatherData.current.time.slice(0, 13) + ":00";
-  const index = weatherData.hourly.time.findIndex((time) => time === hourText);
-  return index === -1 ? 0 : index;
-}
-
-// open-meteo gives local times without a zone.
-// reading them as utc lets us compare them with the city's own clock
-function localToMs(timeText) {
-  return Date.parse(`${timeText}Z`);
+  return findHourIndex(weatherData.current.time, weatherData.hourly.time);
 }
 
 // the city's clock right now, on the same scale as localToMs
@@ -477,64 +389,6 @@ function formatDayName(dateText) {
 
 function formatDayDate(dateText) {
   return new Date(`${dateText}T00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
-// "3 min ago", "2 h ago"
-function formatAge(ms) {
-  const minutes = Math.round(ms / 60000);
-
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours} h ago`;
-
-  return `${Math.round(hours / 24)} days ago`;
-}
-
-// "12 h 4 min"
-function formatDuration(seconds) {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.round((seconds % 3600) / 60);
-  return `${hours} h ${minutes} min`;
-}
-
-// mix between two hex colors
-function mixColor(from, to, amount) {
-  const a = from.match(/\w\w/g).map((part) => parseInt(part, 16));
-  const b = to.match(/\w\w/g).map((part) => parseInt(part, 16));
-  const mixed = a.map((value, index) => Math.round(value + (b[index] - value) * amount));
-  return `rgb(${mixed.join(", ")})`;
-}
-
-// color for a temperature in celsius, from the ramp in the css
-const tempStops = [
-  [-5, "6aa7c8"],
-  [5, "79b6b1"],
-  [14, "b8c37a"],
-  [22, "e6b23c"],
-  [30, "df7a3a"],
-  [38, "c4462f"]
-];
-
-function tempColor(celsius) {
-  if (celsius <= tempStops[0][0]) return `#${tempStops[0][1]}`;
-
-  for (let i = 1; i < tempStops.length; i++) {
-    const [stopTemp, stopColor] = tempStops[i];
-
-    if (celsius <= stopTemp) {
-      const [lastTemp, lastColor] = tempStops[i - 1];
-      return mixColor(lastColor, stopColor, (celsius - lastTemp) / (stopTemp - lastTemp));
-    }
-  }
-
-  return `#${tempStops[tempStops.length - 1][1]}`;
-}
-
-// round coordinates to about 1 km so an exact position is never sent or saved
-function roundCoord(value) {
-  return Math.round(value * 100) / 100;
 }
 
 //  messages and loading
@@ -618,14 +472,6 @@ function moveOldData() {
   } catch (error) {
     console.log("could not move old saved data");
   }
-}
-
-// check that a saved city has everything the app needs
-function isValidCity(city) {
-  return city
-    && typeof city.name === "string"
-    && typeof city.latitude === "number"
-    && typeof city.longitude === "number";
 }
 
 // read a list of cities from local storage
@@ -789,6 +635,7 @@ async function showCityWeather(city, saveToRecent = true) {
     applyData(city, data, keepAir, "live", Date.now());
     saveToCache(city, data, keepAir);
     fillAir(city, airRequest, requestId);
+    loadAlerts(city);
 
     if (saveToRecent) {
       addRecentSearch(city);
@@ -844,7 +691,53 @@ function applyData(city, data, air, source, loadedAt) {
   loadingBox.hidden = true;
   skyContent.hidden = false;
   weatherContent.hidden = false;
+  updatePlaceLink(city);
+
+  // alerts belong to one place, so clear them when the place changes
+  if (alerts.cityId !== getCityId(city)) {
+    alerts = { status: "idle", items: [], cityId: getCityId(city) };
+  }
+
   renderWeather();
+  moveRadar();
+}
+
+//  share links
+
+// keep the address bar pointing at the place on screen, so it can be copied or bookmarked
+function updatePlaceLink(city) {
+  try {
+    const query = placeToQuery(city);
+    if (location.search !== query) {
+      history.replaceState(null, "", `${location.pathname}${query}`);
+    }
+  } catch (error) {
+    // some file:// pages do not allow this, the app still works without it
+  }
+}
+
+// share the place with the system share sheet, or copy the link
+async function sharePlace() {
+  if (!currentCity) return;
+
+  const link = `${location.origin}${location.pathname}${placeToQuery(currentCity)}`;
+  const title = `${currentCity.name} weather on HazCast`;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, url: link });
+      return;
+    } catch (error) {
+      if (error.name === "AbortError") return;
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(link);
+    showMessage("Link copied. Anyone who opens it sees this place.", "info");
+  } catch (error) {
+    showMessage(`Copy this link to share: ${link}`, "info");
+  }
 }
 
 // quietly load new data for the city on screen
@@ -866,6 +759,8 @@ async function refreshWeather() {
     refreshFailed = false;
     saveToCache(city, data, airData);
     renderWeather();
+    loadAlerts(city);
+    refreshRadar();
   } catch (error) {
     console.log("could not refresh weather");
     refreshFailed = true;
@@ -1055,10 +950,12 @@ function renderWeather() {
 
   renderSky();
   renderCurrentWeather();
+  renderAlerts();
   renderFreshness();
   renderNotices();
   renderHorizon();
   renderDetails();
+  renderNowcast();
   renderHourlyForecast();
   renderDailyForecast();
   renderAir();
@@ -1256,6 +1153,20 @@ function renderNotices() {
   const notes = [];
   const nowInfo = getWeatherInfo(current.weather_code, true);
 
+  // official alerts come first and say where they are from
+  alerts.items.slice(0, 2).forEach((alert) => {
+    notes.push({ strong: true, text: alert.event, source: "National Weather Service" });
+  });
+
+  // rain starting or stopping in the next two hours
+  const nowcast = getNowcast(weatherData.minutely_15, cityNowMs());
+
+  if (nowcast && nowcast.state === "starting") {
+    notes.push({ strong: false, text: `${getRainWord(nowcast.peak)} rain starting around ${formatClock(nowcast.startsAt)}` });
+  } else if (nowcast && nowcast.state === "stopping") {
+    notes.push({ strong: false, text: `Rain easing off around ${formatClock(nowcast.stopsAt)}` });
+  }
+
   // thunderstorms in the next 12 hours
   if (nowInfo.type !== "storm") {
     for (let i = start + 1; i <= start + 12 && i < hourly.time.length; i++) {
@@ -1293,7 +1204,7 @@ function renderNotices() {
   noticesList.innerHTML = notes.slice(0, 3).map((note) => `
     <li class="notice${note.strong ? " is-strong" : ""}">
       <svg aria-hidden="true"><use href="#i-alert"/></svg>
-      <span>${escapeHtml(note.text)} <small>· from the forecast</small></span>
+      <span>${escapeHtml(note.text)} <small>· ${note.source ? escapeHtml(note.source) : "from the forecast"}</small></span>
     </li>
   `).join("");
 }
@@ -1464,6 +1375,58 @@ function renderDetails() {
   }).join("");
 
   observedNote.textContent = `Model data for ${formatClock(current.time)} local time`;
+}
+
+// how heavy 15 minutes of rain is, using hourly rate bands
+function getRainWord(amount) {
+  const rate = amount * 4;
+  if (rate < 2.5) return "Light";
+  if (rate < 7.6) return "Moderate";
+  return "Heavy";
+}
+
+// rain in the next two hours, 15 minutes at a time
+// hidden when the api has no 15 minute data, older saved data does not have it
+function renderNowcast() {
+  const nowcast = getNowcast(weatherData.minutely_15, cityNowMs());
+
+  if (!nowcast) {
+    nowcastBlock.hidden = true;
+    return;
+  }
+
+  nowcastBlock.hidden = false;
+  nowcastNote.textContent = "Model estimate in 15 minute steps, not radar";
+
+  const last = nowcast.slots[nowcast.slots.length - 1];
+  const amount = formatRain(nowcast.total);
+
+  if (nowcast.state === "dry") {
+    nowcastText.innerHTML = `<strong>No rain expected</strong> through ${formatClock(last.to)}`;
+  } else if (nowcast.state === "starting") {
+    nowcastText.innerHTML = `<strong>${getRainWord(nowcast.peak)} rain from around ${formatClock(nowcast.startsAt)}</strong> about ${amount} in total`;
+  } else if (nowcast.state === "stopping") {
+    nowcastText.innerHTML = `<strong>Rain easing off around ${formatClock(nowcast.stopsAt)}</strong> about ${amount} still to fall`;
+  } else {
+    nowcastText.innerHTML = `<strong>${getRainWord(nowcast.peak)} rain for the next two hours</strong> about ${amount} in total`;
+  }
+
+  // bars scale to 10 mm an hour, square root so light rain still shows
+  nowcastBars.innerHTML = nowcast.slots.map((slot, index) => {
+    const height = Math.min(1, Math.sqrt((slot.amount * 4) / 10));
+    const wet = slot.amount >= 0.1;
+    const label = `${index === 0 ? "Now" : formatClock(slot.from)} to ${formatClock(slot.to)}: ${wet ? formatRain(slot.amount) : "dry"}`;
+
+    return `
+      <li class="nowcast-slot${wet ? " is-wet" : ""}" style="--h: ${height.toFixed(3)}">
+        <span class="nowcast-bar" aria-hidden="true"></span>
+        <span class="visually-hidden">${label}</span>
+      </li>
+    `;
+  }).join("");
+
+  const middle = nowcast.slots[Math.floor(nowcast.slots.length / 2)];
+  nowcastAxis.innerHTML = `<span>Now</span><span>${formatClock(middle.from)}</span><span>${formatClock(last.to)}</span>`;
 }
 
 // show the next 24 hours as a temperature curve with rain and wind under it
@@ -1668,32 +1631,6 @@ function renderDailyForecast() {
   }).join("");
 
   dailyNote.textContent = `Week range ${formatDeg(weekLow)} to ${formatDeg(weekHigh)} · rain chance and amount`;
-}
-
-// us aqi categories
-function getAqiLevel(aqi) {
-  if (aqi <= 50) return { name: "Good", note: "Air quality is satisfactory." };
-  if (aqi <= 100) return { name: "Moderate", note: "Unusually sensitive people may want to limit long outdoor effort." };
-  if (aqi <= 150) return { name: "Unhealthy for sensitive groups", note: "Sensitive groups should reduce long outdoor effort." };
-  if (aqi <= 200) return { name: "Unhealthy", note: "Everyone should reduce long outdoor effort." };
-  if (aqi <= 300) return { name: "Very unhealthy", note: "Avoid long outdoor effort." };
-  return { name: "Hazardous", note: "Avoid outdoor activity." };
-}
-
-// where an aqi value sits on the scale bar
-function getAqiPosition(aqi) {
-  if (aqi <= 200) return (aqi / 200) * 66.6;
-  if (aqi <= 300) return 66.6 + ((aqi - 200) / 100) * 16.7;
-  return 83.3 + Math.min((aqi - 300) / 200, 1) * 16.7;
-}
-
-// pollen level in grains per cubic metre, rough bands
-function getPollenLevel(value) {
-  if (value < 1) return "None";
-  if (value < 20) return "Low";
-  if (value < 80) return "Moderate";
-  if (value < 200) return "High";
-  return "Very high";
 }
 
 // show air quality and pollen
@@ -1939,6 +1876,308 @@ const skyMotion = (() => {
   return { set };
 })();
 
+//  official alerts
+
+// get active alerts from the us national weather service
+// only us places are asked, the service does not cover anywhere else
+async function loadAlerts(city) {
+  const cityId = getCityId(city);
+
+  if (!isInUsCoverage(city.latitude, city.longitude, city.country)) {
+    alerts = { status: "unsupported", items: [], cityId };
+    renderAlerts();
+    return;
+  }
+
+  if (alerts.cityId !== cityId || alerts.status !== "ok") {
+    alerts = { status: "loading", items: [], cityId };
+    renderAlerts();
+  }
+
+  try {
+    const data = await fetchJson(`${alertsUrl}?point=${roundCoord(city.latitude)},${roundCoord(city.longitude)}`);
+    if (!currentCity || getCityId(currentCity) !== cityId) return;
+
+    const now = Date.now();
+    const items = (data.features || [])
+      .map((feature) => feature.properties || {})
+      .filter((alert) => alert.event && Date.parse(alert.ends || alert.expires || 0) > now)
+      .map((alert) => ({
+        event: String(alert.event),
+        severity: String(alert.severity || ""),
+        headline: String(alert.headline || ""),
+        area: String(alert.areaDesc || ""),
+        description: String(alert.description || ""),
+        instruction: String(alert.instruction || ""),
+        ends: alert.ends || alert.expires,
+        sender: String(alert.senderName || "National Weather Service")
+      }));
+
+    alerts = { status: "ok", items, cityId };
+  } catch (error) {
+    if (!currentCity || getCityId(currentCity) !== cityId) return;
+    alerts = { status: "error", items: [], cityId };
+  }
+
+  renderAlerts();
+  renderNotices();
+}
+
+// show alerts, or say plainly why there are none
+function renderAlerts() {
+  const place = currentCity ? escapeHtml(currentCity.country || currentCity.name) : "this place";
+  const link = currentCity
+    ? `https://forecast.weather.gov/MapClick.php?lat=${roundCoord(currentCity.latitude)}&lon=${roundCoord(currentCity.longitude)}`
+    : "https://www.weather.gov/";
+
+  if (alerts.status === "unsupported") {
+    alertsBody.innerHTML = `<p class="alerts-line">Not available for ${place}. HazCast only reads official alerts from the US National Weather Service, so check your national weather service for warnings.</p>`;
+    return;
+  }
+
+  if (alerts.status === "loading" || alerts.status === "idle") {
+    alertsBody.innerHTML = '<p class="alerts-line">Checking the National Weather Service…</p>';
+    return;
+  }
+
+  if (alerts.status === "error") {
+    alertsBody.innerHTML = `<p class="alerts-line">Could not reach the National Weather Service. <a href="${link}" target="_blank" rel="noopener">Check weather.gov</a> for alerts.</p>`;
+    return;
+  }
+
+  if (alerts.items.length === 0) {
+    alertsBody.innerHTML = '<p class="alerts-line"><span class="alerts-clear" aria-hidden="true"></span>No active National Weather Service alerts for this point.</p>';
+    return;
+  }
+
+  const timezone = weatherData ? weatherData.timezone : undefined;
+
+  alertsBody.innerHTML = `<ul class="alerts-list">${alerts.items.map((alert) => {
+    const until = alert.ends
+      ? new Date(alert.ends).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: timezone })
+      : "";
+
+    return `
+      <li class="alert-item${/extreme|severe/i.test(alert.severity) ? " is-severe" : ""}">
+        <details>
+          <summary>
+            <svg aria-hidden="true"><use href="#i-alert"/></svg>
+            <strong>${escapeHtml(alert.event)}</strong>
+            ${until ? `<span>until ${escapeHtml(until)}</span>` : ""}
+          </summary>
+          <div class="alert-text">
+            ${alert.headline ? `<p><strong>${escapeHtml(alert.headline)}</strong></p>` : ""}
+            ${alert.area ? `<p class="alert-area">${escapeHtml(alert.area)}</p>` : ""}
+            ${alert.description ? `<p class="alert-description">${escapeHtml(alert.description)}</p>` : ""}
+            ${alert.instruction ? `<p class="alert-description">${escapeHtml(alert.instruction)}</p>` : ""}
+            <p class="alert-source">Issued by ${escapeHtml(alert.sender)}. <a href="${link}" target="_blank" rel="noopener">Full details on weather.gov</a></p>
+          </div>
+        </details>
+      </li>
+    `;
+  }).join("")}</ul>`;
+}
+
+//  radar
+
+const radar = {
+  map: null,
+  base: null,
+  marker: null,
+  frames: [],
+  layers: [],
+  index: 0,
+  timer: null,
+  loadedAt: 0,
+  opening: false
+};
+
+// add a pinned css or js file to the page once
+function loadFile(type, url, hash) {
+  return new Promise((resolve, reject) => {
+    const element = document.createElement(type === "css" ? "link" : "script");
+
+    if (type === "css") {
+      element.rel = "stylesheet";
+      element.href = url;
+    } else {
+      element.src = url;
+    }
+
+    element.integrity = hash;
+    element.crossOrigin = "anonymous";
+    element.onload = resolve;
+    element.onerror = () => reject(new Error("network error"));
+    document.head.appendChild(element);
+  });
+}
+
+// openstreetmap base map, greyed in css so the radar colors stand out
+function getBaseLayer() {
+  return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 10,
+    className: "radar-base",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  });
+}
+
+// open the radar the first time it is asked for
+async function openRadar() {
+  if (radar.opening || radar.map || !currentCity) return;
+
+  radar.opening = true;
+  radarBtn.disabled = true;
+  radarBtn.textContent = "Loading radar…";
+
+  try {
+    if (!window.L) {
+      await Promise.all([
+        loadFile("css", leafletFiles.css, leafletFiles.cssHash),
+        loadFile("js", leafletFiles.js, leafletFiles.jsHash)
+      ]);
+    }
+
+    radar.map = L.map(radarMapBox, {
+      center: [currentCity.latitude, currentCity.longitude],
+      zoom: 7,
+      minZoom: 3,
+      maxZoom: 10,
+      scrollWheelZoom: false
+    });
+
+    radar.base = getBaseLayer().addTo(radar.map);
+    radar.marker = L.circleMarker([currentCity.latitude, currentCity.longitude], {
+      radius: 6,
+      weight: 2,
+      color: "#132120",
+      fillColor: "#f0c84b",
+      fillOpacity: 1
+    }).addTo(radar.map);
+
+    radarStart.hidden = true;
+    radarControls.hidden = false;
+    await loadRadarFrames();
+  } catch (error) {
+    console.error(error);
+
+    if (radar.map) {
+      radar.map.remove();
+      radar.map = null;
+    }
+
+    radarStart.hidden = false;
+    radarControls.hidden = true;
+    radarStart.querySelector("p").textContent = "Could not load the radar. Check your connection and try again.";
+    radarBtn.disabled = false;
+    radarBtn.textContent = "Try again";
+  } finally {
+    radar.opening = false;
+  }
+}
+
+// get the list of past radar frames and make a layer for each
+async function loadRadarFrames() {
+  const data = await fetchJson(radarListUrl);
+  const past = data && data.radar && Array.isArray(data.radar.past) ? data.radar.past : [];
+
+  if (!data.host || past.length === 0) {
+    radarTime.textContent = "No radar frames available right now.";
+    return;
+  }
+
+  stopRadar();
+  radar.layers.forEach((layer) => radar.map.removeLayer(layer));
+
+  radar.frames = past;
+  radar.layers = past.map((frame) => L.tileLayer(`${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+    opacity: 0,
+    maxNativeZoom: 7,
+    maxZoom: 10,
+    attribution: '<a href="https://www.rainviewer.com/">RainViewer</a>'
+  }));
+  radar.loadedAt = Date.now();
+
+  radarRange.max = String(past.length - 1);
+  showRadarFrame(past.length - 1);
+}
+
+// show one frame, the others stay on the map but hidden so playback is smooth
+function showRadarFrame(index) {
+  const layer = radar.layers[index];
+  if (!layer) return;
+
+  if (!radar.map.hasLayer(layer)) layer.addTo(radar.map);
+
+  radar.layers.forEach((other, otherIndex) => other.setOpacity(otherIndex === index ? 0.75 : 0));
+  radar.index = index;
+  radarRange.value = String(index);
+
+  // load the next frame ahead of time
+  const next = radar.layers[(index + 1) % radar.layers.length];
+  if (next && !radar.map.hasLayer(next)) next.addTo(radar.map);
+
+  const time = new Date(radar.frames[index].time * 1000);
+  const clock = time.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: weatherData ? weatherData.timezone : undefined
+  });
+  const minutesAgo = Math.round((Date.now() - time.getTime()) / 60000);
+  const label = `${clock} local time, ${minutesAgo < 1 ? "just now" : `${minutesAgo} min ago`}`;
+
+  radarTime.textContent = label;
+  radarRange.setAttribute("aria-valuetext", label);
+}
+
+function playRadar() {
+  if (radar.timer || radar.layers.length < 2) return;
+
+  radarPlay.textContent = "Pause";
+  radarPlay.setAttribute("aria-pressed", "true");
+  radar.timer = setInterval(() => {
+    if (document.hidden) return;
+    showRadarFrame((radar.index + 1) % radar.layers.length);
+  }, 700);
+}
+
+function stopRadar() {
+  clearInterval(radar.timer);
+  radar.timer = null;
+  radarPlay.textContent = "Play";
+  radarPlay.setAttribute("aria-pressed", "false");
+}
+
+function toggleRadarPlay() {
+  if (radar.timer) stopRadar();
+  else playRadar();
+}
+
+function handleRadarRange() {
+  stopRadar();
+  showRadarFrame(Number(radarRange.value));
+}
+
+// follow the place on screen
+function moveRadar() {
+  if (!radar.map || !currentCity) return;
+
+  const point = [currentCity.latitude, currentCity.longitude];
+  radar.map.setView(point, radar.map.getZoom());
+  radar.marker.setLatLng(point);
+}
+
+// new frames arrive every 10 minutes
+async function refreshRadar() {
+  if (!radar.map || Date.now() - radar.loadedAt < 10 * 60 * 1000) return;
+
+  try {
+    await loadRadarFrames();
+  } catch (error) {
+    console.log("could not refresh radar");
+  }
+}
+
+
 //  masthead
 
 // the masthead sits on the sky at the top, and turns solid once you scroll past it
@@ -2068,6 +2307,9 @@ function renderFavorites() {
     return;
   }
 
+  const canMove = favorites.length > 1;
+  placesHint.hidden = !canMove;
+
   favoritesList.innerHTML = favorites.map((city, index) => {
     const saved = favoriteTemps[getCityId(city)];
     const tempText = saved ? formatDeg(saved.temp) : "";
@@ -2076,8 +2318,8 @@ function renderFavorites() {
     const current = isCurrent(city);
 
     return `
-      <li class="place-item${current ? " is-current" : ""}">
-        <button class="city-btn" type="button" data-action="load" data-index="${index}"${current ? ' aria-current="true"' : ""}>
+      <li class="place-item${current ? " is-current" : ""}" data-index="${index}"${canMove ? ' draggable="true"' : ""}>
+        <button class="city-btn" type="button" data-action="load" data-index="${index}"${current ? ' aria-current="true"' : ""}${canMove ? ' aria-describedby="places-hint"' : ""}>
           ${info ? glyph(info.glyph, "", info.name) : ""}
           <span class="city-name">${name}</span>
           <span class="city-temp">${tempText}</span>
@@ -2125,6 +2367,93 @@ function handleFavoritesClick(event) {
   } else if (button.dataset.action === "remove") {
     removeFavorite(city);
   }
+}
+
+// move a saved place to a new spot in the list
+function moveFavorite(from, to) {
+  if (to < 0 || to >= favorites.length || from === to) return false;
+
+  favorites = moveItem(favorites, from, to);
+  saveFavorites();
+  renderFavorites();
+  placesStatus.textContent = `${favorites[to].name} moved to position ${to + 1} of ${favorites.length}`;
+  return true;
+}
+
+// alt + arrow keys move the focused saved place
+function handleFavoritesKeys(event) {
+  const button = event.target.closest(".city-btn");
+  if (!button || !event.altKey) return;
+
+  const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
+  if (!step) return;
+
+  event.preventDefault();
+  const from = Number(button.dataset.index);
+
+  if (moveFavorite(from, from + step)) {
+    favoritesList.querySelector(`.city-btn[data-index="${from + step}"]`).focus();
+  }
+}
+
+// drag and drop with a mouse, or a long press on phones that support it
+function getDropPosition(event) {
+  const item = event.target.closest(".place-item");
+  if (!item) return -1;
+
+  const box = item.getBoundingClientRect();
+  const index = Number(item.dataset.index);
+  return event.clientX > box.left + box.width / 2 ? index + 1 : index;
+}
+
+function clearDropMarks() {
+  favoritesList.querySelectorAll(".drop-before, .drop-after").forEach((item) => {
+    item.classList.remove("drop-before", "drop-after");
+  });
+}
+
+function handleDragStart(event) {
+  const item = event.target.closest(".place-item");
+  if (!item || !item.draggable) return;
+
+  dragIndex = Number(item.dataset.index);
+  item.classList.add("is-dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", String(dragIndex));
+}
+
+function handleDragOver(event) {
+  if (dragIndex === -1) return;
+
+  const position = getDropPosition(event);
+  if (position === -1) return;
+
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  clearDropMarks();
+
+  const items = favoritesList.querySelectorAll(".place-item");
+  if (position < items.length) items[position].classList.add("drop-before");
+  else items[items.length - 1].classList.add("drop-after");
+}
+
+function handleDrop(event) {
+  if (dragIndex === -1) return;
+
+  event.preventDefault();
+  const position = getDropPosition(event);
+  const from = dragIndex;
+  dragIndex = -1;
+  clearDropMarks();
+
+  if (position === -1) return;
+  moveFavorite(from, position > from ? position - 1 : position);
+}
+
+function handleDragEnd() {
+  dragIndex = -1;
+  clearDropMarks();
+  favoritesList.querySelectorAll(".is-dragging").forEach((item) => item.classList.remove("is-dragging"));
 }
 
 //  recent searches
@@ -2225,7 +2554,16 @@ function setupEventListeners() {
   unitFBtn.addEventListener("click", () => changeUnit("F"));
   themeBtn.addEventListener("click", toggleTheme);
   favoriteBtn.addEventListener("click", toggleFavorite);
+  shareBtn.addEventListener("click", sharePlace);
+  radarBtn.addEventListener("click", openRadar);
+  radarPlay.addEventListener("click", toggleRadarPlay);
+  radarRange.addEventListener("input", handleRadarRange);
   favoritesList.addEventListener("click", handleFavoritesClick);
+  favoritesList.addEventListener("keydown", handleFavoritesKeys);
+  favoritesList.addEventListener("dragstart", handleDragStart);
+  favoritesList.addEventListener("dragover", handleDragOver);
+  favoritesList.addEventListener("drop", handleDrop);
+  favoritesList.addEventListener("dragend", handleDragEnd);
   recentList.addEventListener("click", handleRecentClick);
 
   freshness.addEventListener("click", (event) => {
@@ -2279,8 +2617,9 @@ function init() {
   setupEventListeners();
   updateMasthead();
 
-  // open the last searched city, or the default city
-  const startCity = recentSearches.length > 0 ? recentSearches[0] : defaultCity;
+  // open a shared place, then the last searched city, then the default city
+  const sharedCity = queryToPlace(location.search);
+  const startCity = sharedCity || (recentSearches.length > 0 ? recentSearches[0] : defaultCity);
   showCityWeather(startCity, false);
   loadFavoriteTemps();
 
@@ -2297,6 +2636,13 @@ function init() {
   }, 5 * 60 * 1000);
 
   setInterval(refreshWeather, refreshTime);
+
+  // keep the app itself available offline, only over http(s)
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    navigator.serviceWorker.register("sw.js").catch(() => {
+      console.log("could not set up offline support");
+    });
+  }
 }
 
 init();

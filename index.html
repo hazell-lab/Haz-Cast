@@ -20,6 +20,8 @@
 
   <!-- favicon -->
   <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
 
   <!-- google fonts: archivo with its width axis -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -155,6 +157,9 @@
       <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5L21.5 20h-19Z"/><path d="M12 10v4.5"/></g>
       <circle cx="12" cy="17.2" r="1.1" fill="currentColor"/>
     </symbol>
+    <symbol id="i-share" viewBox="0 0 24 24">
+      <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14.5V3.5M8 7.5l4-4 4 4"/><path d="M6.5 11H5v9.5h14V11h-1.5"/></g>
+    </symbol>
     <symbol id="i-history" viewBox="0 0 24 24">
       <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3.2h3.2"/><path d="M12 8v4.3l2.8 1.7"/></g>
     </symbol>
@@ -188,14 +193,14 @@
 
       <!-- controls -->
       <div class="controls">
-        <button id="location-btn" class="control-btn" type="button" aria-label="use my location">
+        <button id="location-btn" class="control-btn" type="button" aria-label="Locate me, use my location">
           <svg aria-hidden="true"><use href="#i-locate"/></svg>
           <span class="btn-text">Locate me</span>
         </button>
 
         <div class="unit-toggle" role="group" aria-label="units">
-          <button id="unit-c" class="unit-btn active" type="button" aria-pressed="true" aria-label="Celsius and metric">°C</button>
-          <button id="unit-f" class="unit-btn" type="button" aria-pressed="false" aria-label="Fahrenheit and imperial">°F</button>
+          <button id="unit-c" class="unit-btn active" type="button" aria-pressed="true" aria-label="°C, Celsius and metric units">°C</button>
+          <button id="unit-f" class="unit-btn" type="button" aria-pressed="false" aria-label="°F, Fahrenheit and imperial units">°F</button>
         </div>
 
         <button id="theme-btn" class="control-btn icon-only" type="button" aria-label="switch to dark mode">
@@ -244,6 +249,9 @@
 
             <div class="sky-actions">
               <p id="freshness" class="freshness" aria-live="polite"></p>
+              <button id="share-btn" class="save-btn" type="button">
+                <svg aria-hidden="true"><use href="#i-share"/></svg><span>Share</span>
+              </button>
               <button id="favorite-btn" class="save-btn" type="button" aria-pressed="false"></button>
             </div>
           </div>
@@ -281,7 +289,15 @@
         <h2 id="places-title" class="label">Places</h2>
         <ul id="favorites-list" class="places-list"></ul>
         <ul id="recent-list" class="places-list places-recent" aria-label="recent searches"></ul>
+        <p id="places-hint" class="visually-hidden" hidden>Drag to reorder, or press Alt and an arrow key.</p>
+        <p id="places-status" class="visually-hidden" aria-live="polite"></p>
       </nav>
+
+      <!-- official alerts, only from the us national weather service -->
+      <section id="alerts-block" class="alerts" aria-labelledby="alerts-title">
+        <h2 id="alerts-title" class="label">Official alerts</h2>
+        <div id="alerts-body" class="alerts-body" aria-live="polite"></div>
+      </section>
 
       <!-- instrument readings -->
       <section class="block readings-block" aria-labelledby="details-title">
@@ -290,6 +306,21 @@
           <p id="observed" class="block-note"></p>
         </div>
         <div id="details-grid" class="readings"></div>
+      </section>
+
+      <!-- rain in the next two hours, from 15 minute model data -->
+      <section id="nowcast-block" class="block nowcast-block" aria-labelledby="nowcast-title" hidden>
+        <div class="block-head">
+          <h2 id="nowcast-title" class="block-title">Next two hours</h2>
+          <p id="nowcast-note" class="block-note"></p>
+        </div>
+        <div class="nowcast">
+          <p id="nowcast-text" class="nowcast-text"></p>
+          <div class="nowcast-chart">
+            <ol id="nowcast-bars" class="nowcast-bars"></ol>
+            <div id="nowcast-axis" class="nowcast-axis" aria-hidden="true"></div>
+          </div>
+        </div>
       </section>
 
       <!-- next 24 hours -->
@@ -304,6 +335,27 @@
           <span><i class="key key-wind"></i>Wind</span>
         </div>
         <div id="hourly-list" class="hourly" tabindex="0" role="group" aria-label="hourly forecast. use the left and right arrow keys to read each hour"></div>
+      </section>
+
+      <!-- radar, loaded only when asked for -->
+      <section class="block radar-block" aria-labelledby="radar-title">
+        <div class="block-head">
+          <h2 id="radar-title" class="block-title">Radar</h2>
+          <p class="block-note">Past two hours from RainViewer. Radar shows what has fallen, it is not a forecast.</p>
+        </div>
+        <div id="radar" class="radar">
+          <div id="radar-map" class="radar-map" role="region" aria-label="radar map"></div>
+          <div id="radar-start" class="radar-start">
+            <p>The map loads tiles from OpenStreetMap and RainViewer.</p>
+            <button id="radar-btn" class="radar-btn" type="button">Show radar map</button>
+          </div>
+        </div>
+        <div id="radar-controls" class="radar-controls" hidden>
+          <button id="radar-play" class="radar-play" type="button" aria-pressed="false">Play</button>
+          <input id="radar-range" class="radar-range" type="range" min="0" max="0" value="0" aria-label="radar frame">
+          <p id="radar-time" class="radar-time" aria-live="polite"></p>
+        </div>
+        <p class="radar-note">Coverage varies by country. A clear area can mean there is no radar there, not that it is dry.</p>
       </section>
 
       <div class="split">
@@ -344,16 +396,19 @@
       <p class="footer-brand"><strong>HazCast</strong> · built with HTML, CSS &amp; JavaScript</p>
       <p>
         Forecast and air quality by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
-        Open-Meteo does not publish official weather warnings, so HazCast cannot show them. For warnings, check your national weather service.
+        Radar by <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>.
+        Official alerts by the <a href="https://www.weather.gov/" target="_blank" rel="noopener">US National Weather Service</a>, for US places only. Elsewhere, check your national weather service.
       </p>
       <p>
         Developer: Hazim Aqil ·
         <a href="https://github.com/hazell-lab/" target="_blank" rel="noopener">GitHub</a> ·
-        <a href="https://hazimaqil-portfolio.netlify.app" target="_blank" rel="noopener">Portfolio</a>
+        <a href="https://hazimaqil-portfolio.netlify.app" target="_blank" rel="noopener">Portfolio</a> ·
+        <a href="case-study.html">Case study</a>
       </p>
     </div>
   </footer>
 
+  <script src="js/weather-core.js"></script>
   <script src="js/script.js"></script>
 </body>
 </html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="How HazCast was redesigned from a card-grid weather app into an atmospheric weather dashboard, without fake data.">
+  <meta name="theme-color" content="#33444d">
+  <title>HazCast case study | Hazim Aqil</title>
+
+  <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/case-study.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="cs-head">
+    <a class="cs-brand" href="./">
+      <img src="assets/icons/favicon.svg" alt="" width="28" height="28">
+      HazCast
+    </a>
+    <nav aria-label="case study links">
+      <a href="./">Open the app</a>
+      <a href="https://github.com/hazell-lab/Haz-Cast" target="_blank" rel="noopener">Source</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="cs-hero">
+      <p class="cs-kicker">Case study · weather dashboard</p>
+      <h1>A weather app that looks like the weather</h1>
+      <p class="cs-lede">
+        HazCast started as a tidy but generic card grid. I redesigned it into an atmospheric dashboard where the sky
+        at the top of the page is the current weather, then added rain for the next two hours, radar, official alerts
+        and offline support, without inventing a single number.
+      </p>
+      <dl class="cs-facts">
+        <div><dt>Role</dt><dd>Design and front-end</dd></div>
+        <div><dt>Stack</dt><dd>HTML, CSS, vanilla JavaScript, no build step</dd></div>
+        <div><dt>Data</dt><dd>Open-Meteo, RainViewer, US National Weather Service</dd></div>
+        <div><dt>Keys or backend</dt><dd>None</dd></div>
+      </dl>
+    </section>
+
+    <figure class="cs-wide">
+      <img src="docs/case-study/after-desktop-light.webp" alt="HazCast on desktop: a large sky with the temperature, a horizon line with the sun, and the readings below" width="1440" height="900">
+      <figcaption>The sky changes with the real condition and the time of day at the place you are looking at.</figcaption>
+    </figure>
+
+    <section class="cs-section">
+      <h2>The problem</h2>
+      <div class="cs-text">
+        <p>The first version worked well but said nothing about weather. It used Inter, blue buttons and white cards, the same as my productivity app, and every panel had the same weight, so the current temperature competed with eight equal tiles.</p>
+        <p>Some of the data also read wrong. "Precipitation 100%" looked like it was raining now when it meant a chance today. There was no last-updated time, and a failed request on start-up left an empty page.</p>
+        <p>I wrote a <a href="https://github.com/hazell-lab/Haz-Cast/blob/main/docs/design-audit.md" target="_blank" rel="noopener">design audit</a> before touching any code, listing what to keep, what was broken, and what each change should fix.</p>
+      </div>
+    </section>
+
+    <section class="cs-pair" aria-label="before and after">
+      <figure>
+        <img src="docs/case-study/before-desktop-light.webp" alt="The original HazCast: white cards in a grid with blue accents" width="1440" height="900" loading="lazy">
+        <figcaption>Before: a card grid that could be any dashboard.</figcaption>
+      </figure>
+      <figure>
+        <img src="docs/case-study/after-desktop-dark.webp" alt="The redesigned HazCast in dark mode with a night sky" width="1440" height="900" loading="lazy">
+        <figcaption>After: the sky leads, the readings sit on ruled lines under it.</figcaption>
+      </figure>
+    </section>
+
+    <section class="cs-section">
+      <h2>Design decisions</h2>
+      <ol class="cs-list">
+        <li>
+          <h3>The sky is the hero</h3>
+          <p>Sky moods for clear, cloudy, fog, rain, snow and storm, by day and night, plus dawn and dusk around the real sunrise and sunset. Rain and snow are a light canvas layer that pauses off screen, in background tabs and for reduced motion.</p>
+        </li>
+        <li>
+          <h3>A horizon line as the signature</h3>
+          <p>Sunrise on the left, sunset on the right, and the sun where it actually is between them. It replaces two plain text tiles and answers "how much daylight is left" at a glance.</p>
+        </li>
+        <li>
+          <h3>Charts instead of tiles</h3>
+          <p>The next 24 hours is one temperature curve with rain-chance bars and wind, readable with hover, tap or arrow keys. The week puts every high and low on one shared scale, so a warm day looks warm.</p>
+        </li>
+        <li>
+          <h3>Its own identity</h3>
+          <p>Archivo's width axis does the work: condensed thin numerals for temperatures, wide capitals for labels. A cool mineral ground, a wet-slate dark mode, and one yellow kept for the sun and "now".</p>
+        </li>
+      </ol>
+    </section>
+
+    <figure class="cs-wide">
+      <img src="docs/case-study/sky-moods.webp" alt="Ten sky moods side by side: clear, partly cloudy, dusk, overcast, rain, a night storm, fog, snow, clear night and foggy night" width="1280" height="1900" loading="lazy">
+      <figcaption>Sky moods captured with test data during QA. Each one was checked for text contrast on the real capture, not just the colour values.</figcaption>
+    </figure>
+
+    <section class="cs-section">
+      <h2>Honest data</h2>
+      <div class="cs-text">
+        <p>The rule for the whole project was simple: never show a number the data did not give us, and always say where it came from.</p>
+        <ul class="cs-bullets">
+          <li><strong>Live or saved.</strong> The last forecast for each place is kept. It shows straight away marked "saved" with its age, then is replaced by live data. Offline or rate-limited, the saved copy stays with a retry.</li>
+          <li><strong>Forecast notes are not warnings.</strong> Notes like "heavy rain possible around 4 PM" are labelled "from the forecast". Official alerts come only from the US National Weather Service and are labelled with it. Everywhere else the page says plainly that it cannot show them.</li>
+          <li><strong>Rain in the next two hours</strong> uses Open-Meteo's 15-minute model data and says so: "model estimate, not radar".</li>
+          <li><strong>Radar is the past two hours only.</strong> RainViewer no longer offers a radar forecast, so the timeline stops at now, and the page says a clear area can mean no radar coverage, not no rain.</li>
+          <li><strong>Location is rounded</strong> to about 1 km before it is sent anywhere or saved.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="cs-pair cs-pair-phones" aria-label="mobile layouts">
+      <figure>
+        <img src="docs/case-study/after-mobile-light.webp" alt="HazCast on a phone in light mode" width="390" height="844" loading="lazy">
+      </figure>
+      <figure>
+        <img src="docs/case-study/after-mobile-dark.webp" alt="HazCast on a phone in dark mode" width="390" height="844" loading="lazy">
+      </figure>
+      <p class="cs-pair-note">On phones the week becomes rows with a range bar, and saved places sit right under the sky instead of at the bottom.</p>
+    </section>
+
+    <section class="cs-section">
+      <h2>Engineering</h2>
+      <ul class="cs-bullets">
+        <li>No framework and no build step, kept on purpose. The pure logic (unit conversion, weather codes, the rain nowcast, share links, reordering) lives in <code>weather-core.js</code> and is covered by tests that run with Node's built-in test runner.</li>
+        <li>Every request has a 12 second timeout. A slow air-quality service never holds up the forecast, and out-of-date responses are ignored when you switch places quickly.</li>
+        <li>Leaflet loads only when you open the radar, pinned to one version with integrity hashes.</li>
+        <li>A service worker keeps the app itself available offline and installable. Weather data is not cached by it, so nothing stale is ever shown as live.</li>
+        <li>Places can be shared as links, saved, and reordered by drag or with Alt and the arrow keys.</li>
+      </ul>
+    </section>
+
+    <section class="cs-section">
+      <h2>What I would do next</h2>
+      <div class="cs-text">
+        <p>Official alerts outside the US need a separate source for each country, often with keys or licences, so they are left out rather than half done. I would also like a radar forecast if a free, keyless source appears, and a proper settings panel for wind and pressure units.</p>
+      </div>
+    </section>
+
+    <section class="cs-end">
+      <a class="cs-cta" href="./">Open HazCast</a>
+      <a href="https://github.com/hazell-lab/Haz-Cast" target="_blank" rel="noopener">Read the source</a>
+    </section>
+  </main>
+
+  <footer class="cs-foot">
+    <p>HazCast by Hazim Aqil · weather data by Open-Meteo, radar by RainViewer, alerts by the US National Weather Service</p>
+  </footer>
+</body>
+</html>

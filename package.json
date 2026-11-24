@@ -1,0 +1,8 @@
+{
+  "name": "hazcast",
+  "private": true,
+  "description": "atmospheric weather dashboard, static site with no build step",
+  "scripts": {
+    "test": "node --test"
+  }
+}
