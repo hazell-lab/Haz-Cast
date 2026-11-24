@@ -2,7 +2,7 @@
 
 A modern, responsive weather dashboard built with **HTML, CSS and vanilla JavaScript**. HazCast fetches real weather data from the Open-Meteo API, so no API key is needed.
 
-**[🔗 Live Demo](https://hazcast-weatherdashboard.netlify.app/)** · [Case study](https://hazcast-weatherdashboard.netlify.app/case-study.html) · [Source code](https://github.com/hazell-lab/Haz-Cast) · [Portfolio](https://hazimaqil-portfolio.netlify.app)
+**[🔗 Live Demo](https://hazell-lab.github.io/Haz-Cast/)** · [Case study](https://hazell-lab.github.io/Haz-Cast/case-study.html) · [Source code](https://github.com/hazell-lab/Haz-Cast) · [Portfolio](https://hazimaqil-portfolio.netlify.app)
 
 ![HazCast weather dashboard](docs/screenshot.png)
 
